@@ -36,9 +36,16 @@ file/directory collisions and a missing plugin subtree. It never extracts files
 onto the host. A private temporary spool bounds decompression before tar headers
 are parsed and is closed on both success and failure.
 
-The next integration step must reconstruct installed files and lifecycle hooks
-from this inventory and compare them with the package, including independently
-reviewed build inputs and exact hashes for generated executables and licenses.
+`nethub_source.py` provides the NetHub-specific copied-file reconstruction. It
+reads the verified inventory, reproduces the builder's source-copy exclusions,
+returns all four exact lifecycle hooks, checks the package/product version and
+identity, and fingerprints ten compiler, module, builder and license-collector
+inputs. It refuses copied files outside `/usr/local` or in the generated binary
+directory. It does not execute upstream scripts or compile a client.
+
+The next integration step must compare this reconstructed inventory and hooks
+with the package, including independently reviewed build inputs and exact hashes
+for generated executables and licenses.
 NetHub's rebuilt `frpc` requires its compiler/module locks, `FRP_BUILD.json`,
 `FRP_VERSION`, binary and license inventory; matching its version string alone is
 insufficient. No NetHub release record or placeholder release pins are installed
@@ -46,4 +53,6 @@ by this change. Native build, package verification and release approval remain
 required before publication.
 
 Validation: `python3 -B -m unittest discover -s tests -p test_upstream_source.py -v`.
-The existing shared-suite discovery also includes these tests.
+The adapter tests use `test_nethub_source.py` with the same command. The existing
+shared-suite discovery also includes both suites. Synthetic source archives in
+these tests are fixtures, not release records or native build acceptance.
