@@ -69,6 +69,7 @@ class NetHubPackageTests(unittest.TestCase):
         locks = {name: sha(build[PLUGIN + '/frpc-build/' + name]) for name in ['go.mod', 'go.sum']}
         self.generated = {'frpc': elf, 'FRP_VERSION': b'0.71.1\n', 'FRP_LICENSE': b'Fixture frp license.\n',
             'frpc-licenses/GO-LICENSE': b'Fixture Go license.\n',
+            'frpc-licenses/modules.txt': b'example.com/dependency@v1.0.0\ngithub.com/fatedier/frp@v0.71.1\n',
             'frpc-licenses/github.com/fatedier/frp@v0.71.1/LICENSE': b'Fixture frp license.\n',
             'frpc-licenses/example.com/dependency@v1.0.0/LICENSE': b'Fixture dependency license.\n'}
         self.build_receipt = {'compiler': 'go1.26.11', 'frp_version': '0.71.1', 'target': 'freebsd_amd64',
@@ -241,6 +242,23 @@ class NetHubPackageTests(unittest.TestCase):
             (self.cache / name).write_bytes(previous)
             self.record['generated_files'][name] = sha(previous)
         self.pin_record()
+
+    def test_resealed_module_index_must_cover_exact_license_modules(self):
+        name = 'frpc-licenses/modules.txt'
+        for raw in [b'github.com/fatedier/frp@v0.71.1\n',
+                    self.generated[name] + b'unknown.example/module@v1.0.0\n',
+                    self.generated[name].replace(b'\n', b'\r\n')]:
+            (self.cache / name).write_bytes(raw)
+            self.record['generated_files'][name] = sha(raw)
+            self.pin_record()
+            with self.subTest(raw=raw), self.assertRaisesRegex(ValueError, 'license|module'):
+                self.verify()
+
+    def test_missing_module_index_is_not_a_complete_build_record(self):
+        del self.record['generated_files']['frpc-licenses/modules.txt']
+        self.pin_record()
+        with self.assertRaisesRegex(ValueError, 'complete generated-file inventory'):
+            self.verify()
 
     def test_generated_file_and_total_byte_bounds_are_enforced(self):
         for name in ['MAX_FILE_BYTES', 'MAX_BUILD_BYTES']:

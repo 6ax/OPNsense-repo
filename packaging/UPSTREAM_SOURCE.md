@@ -65,6 +65,8 @@ The generated-file directory contains the independent reviewed build outputs,
 relative to `/usr/local/opnsense/nethub-agent/bin/`. It must include `frpc`,
 `FRP_BUILD.json`, `FRP_VERSION`, `FRP_LICENSE` and the complete `frpc-licenses/`
 tree. The Go license and the versioned upstream frp license are mandatory.
+The collector's canonical `frpc-licenses/modules.txt` must cover exactly the
+module license directories, each containing a collected license or notice.
 The record itself also requires a separately reviewed SHA256 supplied explicitly
 to the command. Create and review these pins from an independent accepted build;
 **deriving the record or cache from the candidate under test is not acceptance**.

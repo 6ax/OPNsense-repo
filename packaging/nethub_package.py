@@ -25,7 +25,8 @@ MAX_BUILD_BYTES = 128 * 1024 * 1024
 MAX_PACKAGE_BYTES = 256 * 1024 * 1024
 RECORD_FIELDS = {'schema_version', 'source_commit', 'source_archive_sha256', 'abi',
                  'compiler', 'frp_version', 'build_input_sha256', 'generated_files'}
-REQUIRED_OUTPUTS = {'frpc', 'FRP_BUILD.json', 'FRP_VERSION', 'FRP_LICENSE', 'frpc-licenses/GO-LICENSE'}
+REQUIRED_OUTPUTS = {'frpc', 'FRP_BUILD.json', 'FRP_VERSION', 'FRP_LICENSE',
+                    'frpc-licenses/GO-LICENSE', 'frpc-licenses/modules.txt'}
 EXECUTABLE_SOURCE = {'/usr/local/etc/rc.d/nethub_agent_frpc',
     '/usr/local/etc/rc.syshook.d/early/14-nethub-agent-trust',
     '/usr/local/etc/rc.syshook.d/early/15-nethub-agent-certificate',
@@ -109,6 +110,27 @@ def generated_files(directory, record, stage, lock):
         raise ValueError('Generated frpc receipt differs from source compiler/module/profile pins.')
     if actual['FRP_LICENSE'] != actual[upstream_license] or not actual['FRP_LICENSE'].strip() or not actual['frpc-licenses/GO-LICENSE'].strip():
         raise ValueError('Generated license inventory disagrees with the installed licenses.')
+    try:
+        modules = actual['frpc-licenses/modules.txt'].decode('ascii').splitlines()
+    except UnicodeError as error:
+        raise ValueError('Generated module license index is not canonical ASCII.') from error
+    if (not modules or modules != sorted(set(modules))
+            or actual['frpc-licenses/modules.txt'] != ('\n'.join(modules) + '\n').encode('ascii')
+            or 'github.com/fatedier/frp@v' + stage['frp_version'] not in modules):
+        raise ValueError('Generated module license index is incomplete or noncanonical.')
+    for name in modules:
+        source.upstream.relative_path(name)
+        if '@v' not in name or not any(path.startswith('frpc-licenses/' + name + '/') for path in actual):
+            raise ValueError('Generated module license index names an uncovered module.')
+    for path in actual:
+        if not path.startswith('frpc-licenses/') or path in REQUIRED_OUTPUTS:
+            continue
+        matches = [name for name in modules if path.startswith('frpc-licenses/' + name + '/')]
+        if len(matches) != 1:
+            raise ValueError('Generated license file is outside the module index.')
+        relative = path[len('frpc-licenses/' + matches[0] + '/'):]
+        if not relative.split('/')[0].lower().startswith(('license', 'licence', 'copying', 'notice', 'copyright')):
+            raise ValueError('Generated module file is not a collected license or notice.')
     return {source.GENERATED + name: raw for name, raw in actual.items()}
 
 
