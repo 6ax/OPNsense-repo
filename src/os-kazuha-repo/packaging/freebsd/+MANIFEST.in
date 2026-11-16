@@ -1,0 +1,14 @@
+name: "@PKG_NAME@"
+origin: "@ORIGIN@"
+version: "@VERSION@"
+comment: "@COMMENT@"
+maintainer: "@MAINTAINER@"
+www: "@WWW@"
+abi: "@ABI@"
+arch: "@ARCH@"
+prefix: "@PREFIX@"
+flatsize: @FLATSIZE@
+deps: { os-kazuhahub-repo: { origin: "opnsense/os-kazuhahub-repo", version: "1.0.0" } }
+desc: <<EOD
+@DESC@
+EOD

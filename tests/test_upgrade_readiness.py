@@ -70,7 +70,7 @@ class UpgradeReadinessTests(unittest.TestCase):
                       'native_kernel_version': '1501000',
                       'ok': True, 'checks': ['native lifecycle ' + str(i) for i in range(12)]}
         self.report = {'schema_version': 2, 'source_commit': 'a' * 40, 'packages': [self.entry]}
-        self.assets = {'kazuha.pub': self.public.read_bytes(), REPOSITORY + '/meta.conf': b'version = 2;\n',
+        self.assets = {'kazuhahub.pub': self.public.read_bytes(), REPOSITORY + '/meta.conf': b'version = 2;\n',
                        REPOSITORY + '/data.pkg': self.signed_catalog('data', b'{"version":2}\n')}
         self.publish_package()
         self.requests = []
@@ -116,7 +116,7 @@ class UpgradeReadinessTests(unittest.TestCase):
 
     def test_matching_signed_native_target_is_ready(self):
         self.assertEqual(self.entry, self.check())
-        self.assertEqual(['kazuha.pub', 'release.json', 'release.sig', REPOSITORY + '/meta.conf',
+        self.assertEqual(['kazuhahub.pub', 'release.json', 'release.sig', REPOSITORY + '/meta.conf',
                           REPOSITORY + '/data.pkg', REPOSITORY + '/packagesite.pkg', PACKAGE_PATH], self.requests)
 
     def test_two_series_on_one_abi_keep_distinct_signed_packages(self):
@@ -227,6 +227,6 @@ class UpgradeReadinessTests(unittest.TestCase):
     def test_unsigned_http_transport_and_wrong_trust_anchor_are_rejected(self):
         with self.assertRaisesRegex(ValueError, 'must use HTTPS'):
             readiness.check(BASE.replace('https://', 'http://'), ABI, SERIES)
-        self.assets['kazuha.pub'] += b'changed trust anchor'
+        self.assets['kazuhahub.pub'] += b'changed trust anchor'
         with self.assertRaisesRegex(ValueError, 'Incorrect repository trust anchor'):
             self.check()

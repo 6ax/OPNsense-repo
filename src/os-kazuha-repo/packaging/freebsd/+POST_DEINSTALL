@@ -1,5 +1,4 @@
 #!/bin/sh
-# Firmware transitions can remove packages without setting PKG_UPGRADE.
-# Preserve desired plugin registration, configuration and trust for restoration.
-# The official Plugins page unregisters an explicit administrator removal.
+# Removing the transitional package must leave the renamed repository, its
+# trust anchor and its restore manifest exactly as they are.
 exit 0

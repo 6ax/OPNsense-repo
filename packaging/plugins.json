@@ -1,14 +1,23 @@
 {
   "schema_version": 1,
   "plugins": {
-    "os-kazuha-repo": {
+    "os-kazuhahub-repo": {
       "staging": "repository",
       "abi": "independent",
-      "version": "1.0.1",
+      "version": "1.0.0",
       "stage": {"src": "/"},
       "deps": {},
-      "version_file": {"path": "/usr/local/opnsense/version/kazuha-repo", "format": "json"},
+      "version_file": {"path": "/usr/local/opnsense/version/kazuhahub-repo", "format": "json"},
       "notes": "The build rewrites the version metadata from the signed product series; verify-repo.py reproduces that rewrite. The rewrite is the only thing this shape adds: the version pin, the declared dependencies and the rest are enforced exactly as they are for every other plugin."
+    },
+    "os-kazuha-repo": {
+      "staging": "tree",
+      "abi": "independent",
+      "version": "1.1.0",
+      "stage": {"src": "/"},
+      "deps": {"os-kazuhahub-repo": "opnsense/os-kazuhahub-repo"},
+      "version_file": {"path": "/usr/local/opnsense/version/kazuha-repo", "format": "json"},
+      "notes": "Transitional name from before the rename to os-kazuhahub-repo. It depends on the renamed package so that a firmware update installs it, and keeps only a hook that forwards the restore manifest verbs older plugins call by the old path."
     },
     "os-staticarp": {
       "staging": "tree",

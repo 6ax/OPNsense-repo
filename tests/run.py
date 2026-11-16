@@ -37,7 +37,7 @@ NATIVE_PHP = {
     'os-sing-box': [('src/os-sing-box/tests/native/test-config-setup.php',),
                     ('src/os-sing-box/tests/native/test-settings.php',
                      'src/os-sing-box/src/usr/local/opnsense/scripts/singbox/singbox.php')],
-    'os-kazuha-repo': [('src/os-kazuha-repo/tests/native/test-manifest-lock.php',)],
+    'os-kazuhahub-repo': [('src/os-kazuhahub-repo/tests/native/test-manifest-lock.php',)],
     'os-wanguard': [('src/os-wanguard/tests/native/test-model.php',),
                     ('src/os-wanguard/tests/native/test-private-parity.php',),
                     ('src/os-wanguard/tests/native/check-undefined.php',),
