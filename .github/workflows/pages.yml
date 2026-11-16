@@ -49,6 +49,7 @@ jobs:
         run: |
           mkdir -p _site
           cp index.html kazuhahub.pub kazuhahub.conf SHA256SUMS.txt release.json release.sig _site/
+          if [ -f kazuha.pub ]; then cmp kazuha.pub kazuhahub.pub && cp kazuha.pub _site/; fi
           cp client.sh check-upgrade.py verify-repo.py _site/
           cp -RL repo _site/
           touch _site/.nojekyll

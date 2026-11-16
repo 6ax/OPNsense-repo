@@ -6,7 +6,8 @@ set -eu
 # this path after they install, so the restore manifest verbs are forwarded.
 # Core runs every hook in this directory with no arguments when it configures
 # the firmware; that run belongs to kazuhahub.sh alone, so it does nothing here.
-hook="${KAZUHA_REPO_ROOT:-}/usr/local/opnsense/scripts/firmware/repos/kazuhahub.sh"
+root="${KAZUHAHUB_REPO_ROOT:-}"
+hook="$root/usr/local/opnsense/scripts/firmware/repos/kazuhahub.sh"
 case "${1:-}" in
 '')
     exit 0

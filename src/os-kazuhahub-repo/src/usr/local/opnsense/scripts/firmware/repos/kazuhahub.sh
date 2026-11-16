@@ -277,6 +277,19 @@ mirror_manifest() {
     run_shim write "$merged"
 }
 
+# A router upgraded from os-kazuha-repo received this package as a dependency,
+# which pkg records as automatic.  Removing the transitional package from the
+# Plugins page ends in pkg autoremove, which would then take this one with it.
+# This package is what the router asked for, so it is marked as such.  pkg
+# cannot be asked from inside its own transaction (PKG_PREFIX is set for
+# package scripts), so this waits for the firmware configure run that follows
+# every package operation, and it never runs against a test root.
+keep_installed() {
+    [ -z "$root" ] && [ -z "${PKG_PREFIX:-}" ] || return 0
+    [ "$(pkg query '%a' os-kazuhahub-repo 2>/dev/null || true)" = 1 ] || return 0
+    pkg set -y -A 0 os-kazuhahub-repo >/dev/null 2>&1 || true
+}
+
 require_php() {
     command -v php >/dev/null 2>&1 || { echo 'error: php is unavailable' >&2; exit 1; }
 }
@@ -284,6 +297,7 @@ require_php() {
 case "$verb" in
 configure)
     configure_repository
+    keep_installed
     mirror_manifest || true
     ;;
 mirror)

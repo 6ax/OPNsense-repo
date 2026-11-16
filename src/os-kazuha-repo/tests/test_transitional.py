@@ -20,11 +20,11 @@ class TransitionalTests(unittest.TestCase):
 
     def install_hook(self):
         self.hook.parent.mkdir(parents=True)
-        self.hook.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$KAZUHA_REPO_ROOT/trace"\n')
+        self.hook.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$KAZUHAHUB_REPO_ROOT/trace"\n')
 
     def run_stub(self, *arguments):
         return subprocess.run(['sh', str(STUB), *arguments], capture_output=True, text=True,
-                              env=dict(os.environ, KAZUHA_REPO_ROOT=str(self.root)))
+                              env=dict(os.environ, KAZUHAHUB_REPO_ROOT=str(self.root)))
 
     def test_the_firmware_configure_run_belongs_to_the_renamed_hook(self):
         self.install_hook()

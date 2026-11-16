@@ -39,6 +39,9 @@ openssl pkey -in "$SIGNING_KEY" -pubout -out "$site_dir/kazuhahub.pub" 2>/dev/nu
 [ "$(sha256 -q "$site_dir/kazuhahub.pub")" = 92e83cb0267c3ef27cb355bc2f045c3449fd5c741d1030c7a90c879b00fa5e9b ] || die 'incorrect trust anchor'
 cp "$SCRIPT_DIR/index.html" "$site_dir/index.html"
 cp "$SCRIPT_DIR/kazuhahub.conf" "$site_dir/kazuhahub.conf"
+# Copies of check-upgrade.py and verify-repo.py from before the rename read the
+# trust anchor under its old name.
+cp "$site_dir/kazuhahub.pub" "$site_dir/kazuha.pub"
 cp "$SCRIPT_DIR/client.sh" "$site_dir/client.sh"
 cp "$SCRIPT_DIR/check-upgrade.py" "$site_dir/check-upgrade.py"
 cp "$SCRIPT_DIR/verify-repo.py" "$site_dir/verify-repo.py"
