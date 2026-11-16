@@ -182,6 +182,15 @@
       "deps": {"python313": "lang/python313"},
       "version_file": {"path": "/usr/local/opnsense/version/wanguard", "format": "json"}
     },
+    "os-kazuhahub-radius": {
+      "staging": "tree",
+      "abi": "independent",
+      "version": "1.0.0",
+      "stage": {"src": "/"},
+      "deps": {"freeradius3": "net/freeradius3"},
+      "version_file": {"path": "/usr/local/opnsense/version/kazuhahub-radius", "format": "json"},
+      "notes": "Shell, PHP and configuration templates only. The generated configuration directory, the run directory and the log directory are created by the install hook and the rc script, never by the package manifest."
+    },
     "os-ddclient-opnwall": {
       "staging": "tree",
       "abi": "independent",

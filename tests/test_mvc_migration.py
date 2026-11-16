@@ -27,6 +27,7 @@ PLUGINS = {
     'os-sing-box': ('SingBox', 'singbox'),
     'os-frp': ('Frp', 'frp'),
     'os-wanguard': ('Wanguard', 'wanguard'),
+    'os-kazuhahub-radius': ('KazuhaHubRadius', 'kazuhahubradius'),
 }
 # A plugin whose settings live in config.xml uses the framework's model and
 # service controllers; the actions they inherit are real routes too.
@@ -44,6 +45,9 @@ def serves(source, action):
     return bool(re.search(r'public\s+function\s+' + re.escape(action) + r'Action\s*\(', source)) or (
         base is not None and action in INHERITED[base.group(1)])
 
+
+# data-action values the framework's bootgrid footer buttons carry.
+GRID_ACTIONS = {'add', 'deleteSelected'}
 
 # Public methods verified against the real OPNsense 26.7 Request.php. Phalcon
 # methods such as getHttpHost are absent, even though its examples use them.
@@ -197,6 +201,9 @@ class MvcMigrationTests(unittest.TestCase):
                     self.assertIn(controller.lower(), controllers, 'Missing API controller')
                     self.assertTrue(serves(controllers[controller.lower()], action), 'Missing API action: ' + action)
                 for action in markup.actions:
+                    # The add and delete buttons of a grid footer are UIBootgrid's own, not a service action.
+                    if action in GRID_ACTIONS:
+                        continue
                     self.assertTrue(serves(controllers.get('service', ''), action), 'Missing button API action: ' + action)
 
     def test_configd_commands_reference_packaged_helpers(self):

@@ -1,0 +1,38 @@
+# Kazuha Hub RADIUS proxy: the tunnel the EAP-TTLS inner request runs in.
+# Rendered from the OPNsense configuration; manual edits are overwritten.
+#
+# Nothing is authenticated here. The tunneled PAP request is handed to the
+# realm that points at the central servers, which answer it.
+
+server inner-tunnel {
+	listen {
+		ipaddr = 127.0.0.1
+		port = 18120
+		type = auth
+	}
+
+	authorize {
+		filter_username
+		if (!&User-Password) {
+			reject
+		}
+		update control {
+			&Proxy-To-Realm := "ENTRA"
+		}
+	}
+
+	authenticate {
+	}
+
+	post-auth {
+		Post-Auth-Type REJECT {
+			attr_filter.access_reject
+		}
+	}
+
+	pre-proxy {
+	}
+
+	post-proxy {
+	}
+}

@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+ABI="$(pkg config ABI 2>/dev/null || pkg -vv 2>/dev/null | awk -F'"' '/ABI =/ {print $2; exit}' || true)"
+
+case "$ABI" in
+	FreeBSD:14:amd64|FreeBSD:15:amd64|FreeBSD:16:amd64)
+		;;
+	*)
+		echo "===> Unsupported ABI: ${ABI:-unknown}" >&2
+		echo "===> Supported: FreeBSD:14/15/16:amd64" >&2
+		exit 1
+		;;
+esac
+
+# os-freeradius runs the same radiusd daemon from the same package; the two
+# cannot share it, so this plugin refuses to install next to it.
+if pkg info -e os-freeradius >/dev/null 2>&1; then
+	echo "===> os-freeradius is installed. It runs the same radiusd daemon and cannot coexist with os-kazuhahub-radius." >&2
+	echo "===> Remove os-freeradius first, then install this package again." >&2
+	exit 1
+fi
+exit 0
