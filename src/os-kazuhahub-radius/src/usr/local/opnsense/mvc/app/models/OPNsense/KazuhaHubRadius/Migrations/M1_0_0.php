@@ -7,8 +7,8 @@ use OPNsense\Core\Config;
 
 /**
  * First start of the model: offer the two central servers and the LAN as the
- * network of the access points. The shared secrets stay empty, so nothing can
- * be enabled until the operator has typed them.
+ * network of the access points. The servers start disabled and without secrets, so
+ * nothing can be enabled until the operator has typed them.
  */
 class M1_0_0 extends BaseModelMigration
 {
@@ -36,7 +36,8 @@ class M1_0_0 extends BaseModelMigration
         if (!$known) {
             foreach ([['Production', '100.88.32.2', '10'], ['4c6g', '100.88.33.1', '20']] as $seed) {
                 $node = $model->centrals->central->Add();
-                $node->enabled = '1';
+                /* Off until the operator has typed the shared secret: an enabled server without one is refused. */
+                $node->enabled = '0';
                 $node->description = $seed[0];
                 $node->address = $seed[1];
                 $node->port = '11812';

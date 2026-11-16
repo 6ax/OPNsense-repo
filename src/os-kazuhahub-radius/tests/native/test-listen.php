@@ -82,6 +82,9 @@ namespace {
         ['lan', facts('224.0.0.1'), 'not-unicast'],
         ['lan', facts('255.255.255.255'), 'not-unicast'],
         ['opt1', facts('198.51.100.2', ['gateway' => 'OTHER_GW']), 'gateway'],
+        ['opt1', facts('10.1.0.1', ['gateway_ref' => true]), 'gateway-ref'],
+        ['opt1', facts('10.1.0.1', ['gateway_ref' => false]), null],
+        ['opt1', facts('10.1.0.1', ['gateway' => 'GW', 'gateway_ref' => true]), 'gateway'],
         ['opt1', facts('10.1.0.1', ['blockpriv' => true]), 'wan-like'],
         ['opt1', facts('10.1.0.1', ['blockbogons' => true]), 'wan-like'],
         ['opt1', facts('10.1.0.1', ['gateway' => 'GW', 'blockpriv' => true]), 'gateway'],
@@ -101,7 +104,7 @@ namespace {
     }
 
     /* Every refusal has a readable message that names the interface. */
-    foreach (['invalid', 'wan', 'missing', 'disabled', 'not-static', 'not-unicast', 'gateway', 'wan-like', 'unheard-of'] as $reason) {
+    foreach (['invalid', 'wan', 'missing', 'disabled', 'not-static', 'not-unicast', 'gateway', 'gateway-ref', 'wan-like', 'unheard-of'] as $reason) {
         $message = General::refusalMessage('opt3', $reason);
         check(strpos($message, 'opt3') !== false && strpos($message, '%') === false, "No message for $reason: $message");
     }

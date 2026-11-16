@@ -9,6 +9,8 @@
  *   php seed.php settings <secrets-dir> <enabled|disabled>
  *   php seed.php refusals
  *   php seed.php status
+ *   php seed.php rules
+ *   php seed.php gateway <add|remove>
  *   php seed.php leak <secrets-dir>
  *
  * Every mode prints one JSON object. Secrets are read from files and never
@@ -126,6 +128,56 @@ switch ($mode) {
         $answer['enabled-wan'] = in_array('interfaces', seed_messages($model->performValidation(false)), true)
             ? 'refused' : 'accepted';
         seed_answer($answer);
+        break;
+
+    case 'rules':
+        /* In memory only: nothing is saved. */
+        $answer = [];
+        $model = new General();
+        $node = $model->centrals->central->Add();
+        $node->setNodes(['enabled' => '1', 'address' => '10.99.0.9', 'port' => '11812', 'secret' => '', 'sequence' => '5']);
+        $answer['central_secret'] = in_array($node->secret->__reference, seed_messages($model->performValidation(false)), true)
+            ? 'refused' : 'accepted';
+        $model = new General();
+        $model->enabled = '1';
+        foreach (array_keys(iterator_to_array($model->centrals->central->iterateItems())) as $uuid) {
+            $model->centrals->central->del($uuid);
+        }
+        $answer['enabled_without_central'] = in_array('enabled', seed_messages($model->performValidation(false)), true)
+            ? 'refused' : 'accepted';
+        $model = new General();
+        $model->client_networks = '10.0.0.0/7';
+        $answer['wide_network'] = in_array('client_networks', seed_messages($model->performValidation(false)), true)
+            ? 'refused' : 'accepted';
+        /* An uplink: a gateway on the LAN, added to the in-memory configuration only. */
+        $gateways = Config::getInstance()->object()->OPNsense->Gateways;
+        $item = $gateways->addChild('gateway_item');
+        $item->addChild('name', 'KZR_MEMORY_GW');
+        $item->addChild('interface', 'lan');
+        $model = new General();
+        $model->interfaces = 'lan';
+        $answer['gateway_ref'] = in_array('interfaces', seed_messages($model->performValidation(true)), true)
+            ? 'refused' : 'accepted';
+        seed_answer($answer);
+        break;
+
+    case 'gateway':
+        $gateways = Config::getInstance()->object()->OPNsense->Gateways;
+        if (($argv[2] ?? '') === 'add') {
+            $item = $gateways->addChild('gateway_item');
+            $item->addAttribute('uuid', '00000000-0000-4000-8000-0000000000aa');
+            $item->addChild('name', 'KZR_LIFECYCLE_GW');
+            $item->addChild('interface', 'lan');
+            $item->addChild('ipprotocol', 'inet');
+        } else {
+            for ($i = count($gateways->gateway_item) - 1; $i >= 0; $i--) {
+                if ((string)$gateways->gateway_item[$i]->name === 'KZR_LIFECYCLE_GW') {
+                    unset($gateways->gateway_item[$i]);
+                }
+            }
+        }
+        Config::getInstance()->save(null, false);
+        seed_answer(['result' => 'ok']);
         break;
 
     case 'status':

@@ -9,7 +9,31 @@ use OPNsense\Core\Config;
 class General extends BaseModel
 {
     /* The same characters the templates accept; none of them is special to the RADIUS daemon's configuration. */
+    const MIN_PREFIX = 8;
+
     const SECRET_PATTERN = '/^[A-Za-z0-9!#&()*+,.\/:;<=>?@^_{}|~\[\]-]{8,128}$/D';
+
+    /**
+     * The interfaces any gateway of System > Gateways points at. 26.7 keeps them in the Gateways model
+     * (//OPNsense/Gateways/gateway_item); older configurations used //gateways/gateway_item. Disabled
+     * gateways count too: a gateway on an interface marks it as an uplink.
+     *
+     * @return array interface name => true
+     */
+    public static function gatewayInterfaces()
+    {
+        $root = Config::getInstance()->object();
+        $names = [];
+        foreach ([$root->OPNsense->Gateways->gateway_item, $root->gateways->gateway_item] as $items) {
+            foreach ($items as $item) {
+                $name = trim((string)$item->interface);
+                if ($name !== '') {
+                    $names[$name] = true;
+                }
+            }
+        }
+        return $names;
+    }
 
     /**
      * Reduce an interface node of config.xml to what decides whether the RADIUS
@@ -31,6 +55,7 @@ class General extends BaseModel
             'enable' => isset($node->enable) && (string)$node->enable !== '0',
             'ipaddr' => (string)$node->ipaddr,
             'gateway' => trim((string)$node->gateway),
+            'gateway_ref' => isset(self::gatewayInterfaces()[$name]),
             /* core writes <blockpriv>0</blockpriv> on interfaces that do not block, so a flag counts when it is not "0" */
             'blockpriv' => isset($node->blockpriv) && (string)$node->blockpriv !== '0',
             'blockbogons' => isset($node->blockbogons) && (string)$node->blockbogons !== '0',
@@ -43,7 +68,8 @@ class General extends BaseModel
      * The service answers the Wi-Fi access points on the local networks only. An
      * interface is refused when it is the WAN, has an upstream gateway, takes its
      * address from DHCP, PPPoE or another dynamic type, has no IPv4 address, or
-     * carries the private-network and bogon blocks core sets on WAN interfaces.
+     * is the interface of any gateway defined in System > Gateways, or carries the
+     * private-network and bogon blocks core sets on WAN interfaces.
      *
      * @param string $name interface key, such as lan or opt1
      * @param array|null $facts the result of interfaceFacts()
@@ -74,6 +100,9 @@ class General extends BaseModel
         if (trim((string)($facts['gateway'] ?? '')) !== '') {
             return 'gateway';
         }
+        if (!empty($facts['gateway_ref'])) {
+            return 'gateway-ref';
+        }
         if (!empty($facts['blockpriv']) || !empty($facts['blockbogons'])) {
             return 'wan-like';
         }
@@ -90,6 +119,7 @@ class General extends BaseModel
             'not-static' => gettext('%s has no static IPv4 address.'),
             'not-unicast' => gettext('%s has no usable IPv4 address.'),
             'gateway' => gettext('%s has an upstream gateway, so it looks like a WAN.'),
+            'gateway-ref' => gettext('%s is the interface of a gateway in System > Gateways, so it is an uplink.'),
             'wan-like' => gettext('%s blocks private or bogon networks, so it looks like a WAN.'),
         ];
         return sprintf($messages[$reason] ?? gettext('%s cannot be used.'), $name);
@@ -148,6 +178,33 @@ class General extends BaseModel
             $messages->appendMessage(new Message(self::refusalMessage($name, $reason), 'interfaces'));
         }
 
+        /* A central server that is switched on must be usable, whatever the service does: the messages sit on
+           the row's own fields, so the grid's add, set and toggle actions see them. */
+        $usable = 0;
+        foreach ($this->centrals->central->iterateItems() as $central) {
+            if ((string)$central->enabled !== '1') {
+                continue;
+            }
+            if (!self::secretValid($central->secret->getValue())) {
+                $messages->appendMessage(new Message(
+                    gettext('An enabled central server needs a shared secret of 8 to 128 allowed characters.'),
+                    $central->secret->__reference
+                ));
+            } elseif (trim((string)$central->address) !== '') {
+                $usable++;
+            }
+        }
+        /* The same prefix bound the template applies, so a saved network is never silently dropped. */
+        foreach (self::split($this->client_networks->getValue()) as $entry) {
+            $parts = explode('/', $entry);
+            if (count($parts) === 2 && ctype_digit($parts[1]) && (int)$parts[1] < self::MIN_PREFIX) {
+                $messages->appendMessage(new Message(
+                    sprintf(gettext('%s is too wide; use a prefix of /%d or longer.'), $entry, self::MIN_PREFIX),
+                    'client_networks'
+                ));
+            }
+        }
+
         if ((string)$this->enabled !== '1') {
             return $messages;
         }
@@ -166,21 +223,11 @@ class General extends BaseModel
         if (!self::secretValid($this->client_secret->getValue())) {
             $messages->appendMessage(new Message(gettext('Set the shared secret of the access points.'), 'client_secret'));
         }
-        $usable = 0;
-        foreach ($this->centrals->central->iterateItems() as $central) {
-            if ((string)$central->enabled !== '1') {
-                continue;
-            }
-            $usable++;
-            if (!self::secretValid($central->secret->getValue())) {
-                $messages->appendMessage(new Message(sprintf(
-                    gettext('Set the shared secret of the central server %s before enabling the service.'),
-                    (string)$central->address
-                ), 'enabled'));
-            }
-        }
         if ($usable === 0) {
-            $messages->appendMessage(new Message(gettext('Enable at least one central server.'), 'enabled'));
+            $messages->appendMessage(new Message(
+                gettext('Enable at least one central server that has an address and a shared secret.'),
+                'enabled'
+            ));
         }
         return $messages;
     }

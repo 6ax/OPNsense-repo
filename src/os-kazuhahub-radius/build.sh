@@ -32,6 +32,7 @@ command -v pkg >/dev/null 2>&1 || die "pkg command not found. Run this script on
 command -v tar >/dev/null 2>&1 || die "tar command not found."
 
 need_file "src/usr/local/etc/inc/plugins.inc.d/kazuhahubradius.inc"
+need_file "src/usr/local/etc/newsyslog.conf.d/kazuhahub-radius.conf"
 need_file "src/usr/local/etc/rc.d/kazuhahub_radiusd"
 need_file "src/usr/local/opnsense/mvc/app/controllers/OPNsense/KazuhaHubRadius/IndexController.php"
 need_file "src/usr/local/opnsense/mvc/app/controllers/OPNsense/KazuhaHubRadius/forms/general.xml"

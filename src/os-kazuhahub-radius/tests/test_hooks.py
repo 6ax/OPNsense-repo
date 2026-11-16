@@ -108,19 +108,39 @@ class HookTests(unittest.TestCase):
                 if code:
                     self.assertIn('Unsupported ABI', result.stderr)
 
-    def test_pre_install_refuses_next_to_os_freeradius(self):
+    def test_pre_install_refuses_next_to_os_freeradius_by_its_files_not_by_pkg_info(self):
+        for marker in ['usr/local/opnsense/version/freeradius', 'usr/local/etc/inc/plugins.inc.d/freeradius.inc',
+                       'usr/local/opnsense/mvc/app/models/OPNsense/Freeradius/General.xml']:
+            with self.subTest(marker=marker):
+                self.events.unlink(missing_ok=True)
+                self.put(marker)
+                result = self.run_hook('+PRE_INSTALL', HOOK_ABI='FreeBSD:15:amd64')
+                self.assertEqual(result.returncode, 1)
+                self.assertIn('os-freeradius is installed', result.stderr)
+                self.assertIn('cannot coexist', result.stderr)
+                # pkg info inside a pkg transaction is unreliable, so only the ABI is asked of pkg.
+                self.assertNotIn(['pkg', 'info', '-e', 'os-freeradius'], self.calls())
+                (self.root / marker).unlink()
+        # Even a pkg that claims os-freeradius is installed changes nothing when the files are absent.
         result = self.run_hook('+PRE_INSTALL', HOOK_ABI='FreeBSD:15:amd64', HOOK_FREERADIUS='1')
-        self.assertEqual(result.returncode, 1)
-        self.assertIn('os-freeradius is installed', result.stderr)
-        self.assertIn('cannot coexist', result.stderr)
-        self.assertIn(['pkg', 'info', '-e', 'os-freeradius'], self.calls())
-        self.events.unlink()
-        result = self.run_hook('+PRE_INSTALL', HOOK_ABI='FreeBSD:15:amd64')
         self.assertEqual(result.returncode, 0, result.stderr)
-        # An unsupported ABI is refused before anything else is asked.
-        self.events.unlink()
-        self.assertEqual(self.run_hook('+PRE_INSTALL', HOOK_ABI='FreeBSD:13:amd64', HOOK_FREERADIUS='1').returncode, 1)
-        self.assertNotIn(['pkg', 'info', '-e', 'os-freeradius'], self.calls())
+        # An unsupported ABI is refused first.
+        self.put('usr/local/opnsense/version/freeradius')
+        result = self.run_hook('+PRE_INSTALL', HOOK_ABI='FreeBSD:13:amd64')
+        self.assertIn('Unsupported ABI', result.stderr)
+
+    def test_the_post_install_warns_again_because_pkg_may_go_on_after_a_failed_pre_install(self):
+        self.put('usr/local/opnsense/version/freeradius')
+        result = self.run_hook('+POST_INSTALL')
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('Warning: os-freeradius is installed', result.stderr)
+        (self.root / 'usr/local/opnsense/version/freeradius').unlink()
+        self.assertNotIn('os-freeradius', self.run_hook('+POST_INSTALL').stderr)
+
+    def test_this_package_ships_none_of_the_files_that_mark_os_freeradius(self):
+        for marker in ['usr/local/opnsense/version/freeradius', 'usr/local/etc/inc/plugins.inc.d/freeradius.inc',
+                       'usr/local/opnsense/mvc/app/models/OPNsense/Freeradius/General.xml']:
+            self.assertFalse((PACKAGE / 'src' / marker).exists(), marker)
 
     def test_a_fresh_install_prepares_everything_and_stays_stopped(self):
         caches = [self.put('var/lib/php/tmp/opnsense_menu_cache.xml'), self.put('var/lib/php/tmp/opnsense_acl_cache.json')]
@@ -298,6 +318,9 @@ class CheckScriptTests(FakeRoot):
             env['STUB_RADIUSD_OUTPUT_FILE'] = str(path)
         return subprocess.run(['sh', str(self.script), mode], capture_output=True, text=True, env=env, timeout=20)
 
+    def run_check_args(self, *arguments):
+        return subprocess.run(['sh', str(self.script), *arguments], capture_output=True, text=True, env=self.env(), timeout=20)
+
     def test_a_good_configuration_reports_ok_and_the_command_the_spec_names(self):
         result = self.run_check(output='Configuration appears to be OK\n')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -382,6 +405,14 @@ class CheckScriptTests(FakeRoot):
                 code = self.run_check('conflicts', **extra)
                 self.assertEqual(code.returncode, 1 if expected else 0)
                 self.assertEqual(len(code.stdout.splitlines()), len(expected))
+        for marker in ['usr/local/opnsense/version/freeradius', 'usr/local/etc/inc/plugins.inc.d/freeradius.inc']:
+            path = self.root / marker
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('x')
+            code = self.run_check('conflicts')
+            self.assertEqual(code.returncode, 1, marker)
+            self.assertIn('os-freeradius is installed', code.stdout)
+            path.unlink()
         # The stock service is looked up through service -e, never by touching its settings.
         self.assertIn('service -e', self.lines())
         self.assertFalse(any(line.startswith(('sysrc', 'service radiusd')) for line in self.lines()))
@@ -414,6 +445,40 @@ class CheckScriptTests(FakeRoot):
         self.assertEqual((bad.returncode, bad.stdout), (1, ''))
         self.assertEqual(bad.stderr.strip(), 'Error: broken')
 
+    def test_a_marker_in_the_rendered_files_fails_the_check_with_a_clear_message(self):
+        files = {'sites-enabled/default': ('# no-listen-address', 'No usable listen interface'),
+                 'proxy.conf': ('# no-usable-central', 'No usable central server'),
+                 'clients.conf': ('# no-usable-client', 'No usable access point')}
+        for relative, (marker, text) in files.items():
+            with self.subTest(marker=marker):
+                (self.conf / relative).write_text('server {\n\t%s\n}\n' % marker if 'sites' in relative else marker + '\n')
+                report = json.loads(self.run_check(output='Configuration appears to be OK\n').stdout)
+                self.assertEqual(report['result'], 'failed')
+                self.assertIn(text, report['message'])
+                # The daemon is not even asked.
+                self.assertFalse(any('-XC' in line for line in self.lines()))
+                (self.conf / relative).write_text('x\n')
+                self.events.write_text('')
+        for relative, (marker, text) in files.items():
+            (self.conf / relative).write_text(marker + '\n' if 'sites' not in relative else '\t' + marker + '\n')
+        report = json.loads(self.run_check().stdout)
+        self.assertEqual([line.split(':')[0] for line in report['message'].split('\n')],
+                         ['No usable listen interface', 'No usable central server', 'No usable access point'])
+        failed = self.run_check('start')
+        self.assertEqual(failed.returncode, 1)
+        self.assertIn('No usable', failed.stderr)
+
+    def test_the_rc_script_can_record_its_refusal_as_the_failed_result(self):
+        self.assertEqual(self.run_check('record').returncode, 0)
+        self.assertEqual(json.loads(self.run_check('last').stdout)['message'], 'The service was refused.')
+        self.run_check_args('record', 'the listen address is not configured: 10.0.0.1')
+        last = json.loads(self.run_check('last').stdout)
+        self.assertEqual((last['result'], last['message']), ('failed', 'the listen address is not configured: 10.0.0.1'))
+        self.run_check_args('record', 'x' * 500 + '\nsecond\nthird\nfourth')
+        last = json.loads(self.run_check('last').stdout)
+        self.assertEqual(len(last['message'].split('\n')), 3)
+        self.assertTrue(all(len(line) <= 240 for line in last['message'].split('\n')))
+
     def test_an_unknown_mode_is_a_usage_error(self):
         result = self.run_check('nonsense')
         self.assertEqual(result.returncode, 2)
@@ -441,6 +506,12 @@ run_rc_command() { case "$1" in prestart) kazuhahub_radiusd_prestart ;; prereloa
                              '\tlisten {\n\t\ttype = auth\n\t\tipaddr = 10.7.0.1\n\t\tport = 1812\n\t}\n}\n')
         self.check = self.root / 'usr/local/opnsense/scripts/kazuhahub-radius/check.sh'
         self.check.parent.mkdir(parents=True, exist_ok=True)
+        self.configctl = self.root / 'usr/local/sbin/configctl'
+        self.configctl.write_text('''#!/bin/sh
+printf 'configctl %s\\n' "$*" >> "$STUB_EVENTS"
+exit "${STUB_CONFIGCTL_STATUS:-0}"
+''')
+        self.configctl.chmod(0o755)
         self.check.write_text('''#!/bin/sh
 printf 'check %s\\n' "$*" >> "$STUB_EVENTS"
 case "$1" in
@@ -461,36 +532,40 @@ for address in ${STUB_ADDRESSES:-192.168.0.1 10.7.0.1}; do echo "	inet $address 
     def run_rc(self, action, **extra):
         return subprocess.run(['sh', str(self.script), action], capture_output=True, text=True, env=self.env(**extra), timeout=20)
 
-    def test_a_clean_start_checks_conflicts_then_the_configuration_then_the_addresses(self):
+    def test_a_clean_start_checks_conflicts_renders_checks_and_then_waits_for_the_addresses(self):
         result = self.run_rc('prestart')
         self.assertEqual((result.returncode, result.stderr), (0, ''))
-        calls = [line for line in self.lines() if line.startswith(('check', 'ifconfig'))]
-        # One look at the interfaces per listen address.
-        self.assertEqual(calls, ['check conflicts', 'check start', 'ifconfig -a inet', 'ifconfig -a inet'])
+        calls = [line for line in self.lines() if line.startswith(('check', 'ifconfig', 'configctl'))]
+        # The configuration is rendered again before the check, because the interfaces may have changed;
+        # then one look at the interfaces per listen address.
+        self.assertEqual(calls, ['check conflicts', 'configctl template reload OPNsense/KazuhaHubRadius', 'check start',
+                                 'ifconfig -a inet', 'ifconfig -a inet'])
 
-    def test_a_conflict_refuses_the_start_before_anything_else_runs(self):
+    def test_a_conflict_refuses_the_start_before_anything_else_runs_and_is_recorded(self):
         result = self.run_rc('prestart', STUB_CONFLICT='os-freeradius is installed.')
         self.assertEqual(result.returncode, 1)
         self.assertIn('refusing to start: os-freeradius is installed.', result.stderr)
-        self.assertEqual([line for line in self.lines() if line.startswith('check')], ['check conflicts'])
+        self.assertEqual([line for line in self.lines() if line.startswith(('check', 'configctl'))],
+                         ['check conflicts', 'check record refusing to start: os-freeradius is installed.'])
 
     def test_a_failing_configuration_check_refuses_the_start(self):
+        # The check itself records why: unusable interface, central server or access point included.
         result = self.run_rc('prestart', STUB_CHECK_FAIL='1')
         self.assertEqual(result.returncode, 1)
         self.assertIn('Error: broken', result.stderr)
         self.assertFalse(any(line.startswith('ifconfig') for line in self.lines()))
 
-    def test_no_usable_listen_interface_refuses_the_start(self):
-        self.site.write_text('server default {\n\t# no-listen-address\n\tlisten {\n\t\ttype = auth\n\t\tipaddr = 127.0.0.1\n\t}\n}\n')
-        result = self.run_rc('prestart')
-        self.assertEqual(result.returncode, 1)
-        self.assertIn('no usable listen interface is selected', result.stderr)
-        self.assertFalse(any(line.startswith('ifconfig') for line in self.lines()))
+    def test_a_render_that_fails_only_warns_and_the_last_configuration_is_used(self):
+        result = self.run_rc('prestart', STUB_CONFIGCTL_STATUS='1')
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('could not be rendered again', result.stderr)
+        self.assertIn('check start', self.lines())
 
     def test_an_address_that_never_appears_refuses_the_start_after_waiting(self):
         result = self.run_rc('prestart', STUB_ADDRESSES='192.168.0.1')
         self.assertEqual(result.returncode, 1)
         self.assertIn('the listen address is not configured on this firewall: 10.7.0.1', result.stderr)
+        self.assertIn('check record the listen address is not configured on this firewall: 10.7.0.1', self.lines())
         self.assertEqual(len([line for line in self.lines() if line.startswith('sleep')]), 30)
 
     def test_an_address_that_appears_late_lets_the_start_go_on(self):
@@ -511,9 +586,10 @@ echo "	inet 192.168.0.1 netmask 0xffffff00"
         self.assertEqual(result.returncode, 1)
         self.assertIn('192.168.0.1 10.7.0.1', result.stderr)
 
-    def test_reload_checks_the_configuration_first_and_stop_removes_the_socket(self):
+    def test_reload_renders_and_checks_the_configuration_first_and_stop_removes_the_socket(self):
         self.assertEqual(self.run_rc('prereload').returncode, 0)
-        self.assertIn('check start', self.lines())
+        self.assertEqual([line for line in self.lines() if line.startswith(('check', 'configctl'))],
+                         ['configctl template reload OPNsense/KazuhaHubRadius', 'check start'])
         self.assertEqual(self.run_rc('prereload', STUB_CHECK_FAIL='1').returncode, 1)
         socket = self.root / 'var/run/kazuhahub-radius/radiusd.sock'
         socket.parent.mkdir(parents=True)

@@ -155,11 +155,26 @@ class ServiceTests(unittest.TestCase):
         for command in ['pkg info -e os-freeradius', 'service -e']:
             self.assertIn(command, check)
 
-    def test_the_listen_wait_reads_the_addresses_the_site_template_writes(self):
+    def test_the_listen_wait_reads_the_addresses_the_site_template_writes_and_the_markers_agree(self):
         rc = RC.read_text()
         self.assertIn("sites-enabled/default", rc)
-        self.assertIn('# no-listen-address', rc)
-        self.assertIn('# no-listen-address', (TEMPLATES / 'sites/default').read_text())
+        check = (SCRIPTS / 'check.sh').read_text()
+        for marker, template in [('no-listen-address', 'sites/default'), ('no-usable-central', 'proxy.conf'),
+                                 ('no-usable-client', 'clients.conf')]:
+            self.assertIn('# %s' % marker, (TEMPLATES / template).read_text())
+            self.assertIn('# %s$' % marker, check)
+        # The rc script records every refusal in the check result and renders before it checks.
+        self.assertIn('"${kazuhahub_radiusd_check}" record', rc)
+        self.assertIn('template reload OPNsense/KazuhaHubRadius', rc)
+        self.assertIn('# REQUIRE: NETWORKING configd', rc)
+
+    def test_the_log_is_rotated_by_a_plain_newsyslog_entry(self):
+        text = read('usr/local/etc/newsyslog.conf.d/kazuhahub-radius.conf')
+        entries = [line.split() for line in text.splitlines() if line and not line.startswith('#')]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0][:3], ['/var/log/kazuhahub-radius/radius.log', 'freeradius:freeradius', '640'])
+        self.assertEqual(entries[0][-3:], ['JC', '/var/run/kazuhahub-radius/radiusd.pid', '1'])
+        self.assertIn('${logdir}/radius.log', (TEMPLATES / 'radiusd.conf').read_text())
 
 
 class RouteTests(unittest.TestCase):

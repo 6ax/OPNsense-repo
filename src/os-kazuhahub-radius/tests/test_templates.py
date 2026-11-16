@@ -283,6 +283,7 @@ class TemplateTests(unittest.TestCase):
         for rows in [[], [{**ROW, 'address': '10.0.0.1', 'secret': 'sssssssss1', 'enabled': '0'}]]:
             tree = self.proxy(central_rows=rows)
             self.assertEqual(heads(tree), ['proxy server'])
+            self.assertIn('# no-usable-central', self.files(central_rows=rows)[path('proxy.conf')])
         config = configuration()
         del config['OPNsense']
         self.assertEqual(heads(parse(render(config)[path('proxy.conf')])), ['proxy server'])
@@ -297,15 +298,88 @@ class TemplateTests(unittest.TestCase):
                 self.assertEqual([values(item, 'ipaddr')[0] for item in servers], ['10.0.0.9'])
 
     def test_a_secret_that_could_break_the_configuration_is_never_written(self):
-        for secret in ['abc"def-ghijkl', 'abc\\def-ghijkl', 'abc$def-ghijkl', 'abc def ghijkl', 'short', '',
+        # An unusable entry is left out with a marker, never written with an empty or unsafe secret.
+        for secret in ['abc"def-ghijkl', 'abc\\def-ghijkl', 'abc$def-ghijkl', 'abc def ghijkl', 'short', '', None,
                        'ab\nsecret = "x"', "abc'def-ghijkl", 'a' * 129, 'trailing-newline-ok\n']:
             with self.subTest(secret=secret):
                 files = self.files(client_secret=secret, central_rows=[{**ROW, 'address': '10.0.0.9', 'secret': secret}])
-                tree = parse(files[path('proxy.conf')])
-                self.assertEqual(values(self.home_servers(tree)[0], 'secret'), ['""'])
-                self.assertEqual(values(sections(parse(files[path('clients.conf')]), 'client kazuhahub-ap-1')[0], 'secret'), ['""'])
+                proxy, clients = files[path('proxy.conf')], files[path('clients.conf')]
+                self.assertEqual(self.home_servers(parse(proxy)), [])
+                self.assertEqual(heads(parse(proxy)), ['proxy server'])
+                self.assertIn('# no-usable-central', proxy)
+                self.assertEqual(parse(clients)['items'], [])
+                self.assertIn('# no-usable-client', clients)
+                self.assertNotRegex(proxy + clients, r'secret = ""')
                 if secret:
-                    self.assertNotIn(secret, files[path('proxy.conf')] + files[path('clients.conf')])
+                    self.assertNotIn(secret, proxy + clients)
+
+    def test_one_unusable_central_does_not_take_the_others_with_it(self):
+        rows = [{**ROW, 'address': '10.0.0.1', 'secret': ''}, {**ROW, 'address': '10.0.0.2', 'secret': 'good-secret-000001', 'sequence': '20'}]
+        proxy = self.files(central_rows=rows)[path('proxy.conf')]
+        self.assertEqual([values(item, 'ipaddr')[0] for item in self.home_servers(parse(proxy))], ['10.0.0.2'])
+        self.assertNotIn('no-usable-central', proxy)
+
+    def test_the_markers_appear_only_when_something_is_missing(self):
+        files = self.files()
+        for name, marker in [('proxy.conf', 'no-usable-central'), ('clients.conf', 'no-usable-client'),
+                             ('sites-enabled/default', 'no-listen-address')]:
+            self.assertNotIn(marker, files[path(name)])
+        files = self.files(central_rows=[], networks='', interfaces='wan')
+        for name, marker in [('proxy.conf', 'no-usable-central'), ('clients.conf', 'no-usable-client'),
+                             ('sites-enabled/default', 'no-listen-address')]:
+            self.assertRegex(files[path(name)], r'(?m)^\s*# ' + marker + '$')
+
+    def test_empty_or_missing_values_never_crash_the_rendering(self):
+        for general in [{'client_networks': None}, {'interfaces': None}, {'client_secret': None}, {'client_networks': ''},
+                        {'client_networks': None, 'interfaces': None, 'client_secret': None, 'centrals': ''}]:
+            with self.subTest(general=general):
+                files = self.files(general=general)
+                self.assertEqual(len(files), 12)
+        files = self.files(general={'client_networks': None})
+        self.assertIn('# no-usable-client', files[path('clients.conf')])
+        files = self.files(general={'interfaces': None})
+        self.assertIn('# no-listen-address', files[path('sites-enabled/default')])
+
+    # --- uplinks ----------------------------------------------------------------------
+
+    def uplink_config(self, **kwargs):
+        config = configuration(**kwargs)
+        return config
+
+    def listen_addresses(self, config):
+        return re.findall(r'ipaddr = (\S+)', render(config)[path('sites-enabled/default')])
+
+    def test_an_interface_a_gateway_points_at_never_gets_a_listener(self):
+        # 26.7 keeps gateways in the Gateways model; older configurations under gateways.
+        for place in ['mvc', 'legacy']:
+            for items in [{'interface': 'lan'}, [{'interface': 'opt9'}, {'interface': 'lan', 'disabled': '1'}]]:
+                with self.subTest(place=place, items=items):
+                    config = self.uplink_config()
+                    if place == 'mvc':
+                        config['OPNsense']['Gateways'] = {'gateway_item': items}
+                    else:
+                        config['gateways'] = {'gateway_item': items}
+                    self.assertEqual(self.listen_addresses(config), ['127.0.0.1'])
+                    self.assertIn('# no-listen-address', render(config)[path('sites-enabled/default')])
+        # A gateway on another interface leaves the LAN alone, and so does an empty section.
+        for gateways in [{'gateway_item': {'interface': 'wan'}}, {'gateway_item': [{'interface': 'wan'}, {'interface': 'opt3'}]},
+                         {'gateway_item': []}, {}, '', {'gateway_item': {'interface': None}}, {'gateway_item': 'garbage'}]:
+            with self.subTest(gateways=gateways):
+                config = self.uplink_config()
+                config['OPNsense']['Gateways'] = gateways
+                self.assertEqual(self.listen_addresses(config), ['192.168.0.1'])
+        # Only the uplink loses its listener when several interfaces are selected.
+        config = self.uplink_config(interfaces='lan,opt1', extra_interfaces={'opt1': interface('10.1.0.1', '24')})
+        config['OPNsense']['Gateways'] = {'gateway_item': {'interface': 'opt1'}}
+        self.assertEqual(self.listen_addresses(config), ['192.168.0.1'])
+
+    # --- client networks -------------------------------------------------------------
+
+    def test_repeated_networks_become_one_client(self):
+        tree = parse(self.files(networks='10.7.0.0/24,10.7.0.0/24, 172.16.5.9 ,172.16.5.9/32,192.168.0.0/22')[path('clients.conf')])
+        self.assertEqual([values(item, 'ipv4addr')[0] for item in tree['items']], ['10.7.0.0/24', '172.16.5.9', '192.168.0.0/22'])
+        self.assertEqual([item['head'] for item in tree['items']],
+                         ['client kazuhahub-ap-1', 'client kazuhahub-ap-2', 'client kazuhahub-ap-3'])
 
     def test_secrets_with_every_allowed_character_are_written_verbatim(self):
         secret = 'Az09!#&()*+,./:;<=>?@^_{}|~[]-'

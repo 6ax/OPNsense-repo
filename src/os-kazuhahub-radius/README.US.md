@@ -46,7 +46,7 @@ install hook accepts FreeBSD 14, 15 and 16 on amd64 only.
 | Server certificate / Certificate authority | empty | From **System > Trust**; the private key must be stored on this firewall. |
 | Access point networks | the LAN subnet | IPv4 networks the access points live in (Irvine: `192.168.0.0/22`); one client per network. |
 | Access point secret | empty | The shared secret between the access points and this service. |
-| Central servers | Production `100.88.32.2:11812`, 4c6g `100.88.33.1:11812` | Address, port, secret and order; lower sequence first. |
+| Central servers | Production `100.88.32.2:11812`, 4c6g `100.88.33.1:11812` (offered disabled, without secrets) | Address, port, secret and order; lower sequence first. |
 
 **Secrets are never shown again.** Like every OPNsense secret they live in
 `config.xml`, the API never returns them, and an empty form field keeps the
@@ -101,6 +101,33 @@ content changed. They are exported and checked again before every start.
 Deinstalling removes the generated configuration, the runtime files and the log;
 the settings stay in `config.xml` and come back on a reinstall. An upgrade keeps
 the generated configuration and restarts the service when it is enabled.
+
+## Further behaviour
+
+- **Uplinks.** An interface that any gateway of System > Gateways points at, disabled or not (the 26.7
+  `//OPNsense/Gateways` model and the older `//gateways` section are both read), cannot carry the listener
+  either; the templates repeat the check, so a gateway added later drops the listener.
+- **Central servers.** The two defaults are offered **disabled** and without secrets. Enabling one needs a valid
+  secret on that row (the message sits on the row's secret field, so the grid's add, edit and toggle actions refuse
+  it), and the service needs at least one usable central server. The templates skip an unusable row instead of
+  writing an empty secret; when none is left they leave a marker, and **Check now** and the start fail with a
+  clear message.
+- **Client networks.** Prefixes shorter than `/8` are refused, in the model and the template alike, and repeated
+  networks produce one client. With no usable network or secret the same marker and refusal apply.
+- **The configuration is rendered again before every start and reload** (the rc script runs
+  `configctl template reload OPNsense/KazuhaHubRadius`), so an interface address that changed is picked up by the
+  next start; a running listener set is not changed until a restart. This was chosen over an interface hook
+  because it is one place that every start path goes through.
+- **Refusals reach the status page.** Every refusal of the rc script (conflicts, no usable interface, central server
+  or access point, a listen address that is not configured) is written to the last check result.
+- **Source address toward the central servers.** The proxy requests use FreeRADIUS's ephemeral wildcard UDP socket
+  on a random high port. It is not a listener: no `listen` section opens it, it only sends to the configured
+  central servers and receives their answers, and the lifecycle check asserts that it is the only wildcard socket
+  and not on port 1812. No `src_ipaddr` is set: the kernel picks the source address by route for each central server, and a single fixed address could disagree with the route to one of them.
+- **Log rotation.** `/usr/local/etc/newsyslog.conf.d/kazuhahub-radius.conf` rotates the log at 2 MB, keeps 7 and
+  sends radiusd a HUP to reopen it.
+- **Coexistence check.** `+PRE_INSTALL` does not use `pkg info`, which is unreliable inside a pkg transaction; it
+  looks for files only os-freeradius installs (`/usr/local/opnsense/version/freeradius` and others). pkg 2.8 prints "PRE-INSTALL script failed" and carries on, so the post-install warns again and the service itself refuses to start (and says so in the status) while those files exist.
 
 ## Tests
 

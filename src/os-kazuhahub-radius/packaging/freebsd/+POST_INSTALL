@@ -9,6 +9,14 @@ if [ -f /usr/local/opnsense/scripts/firmware/repos/kazuhahub.sh ]; then
         || echo 'Warning: Kazuha Hub plugin restore manifest could not be updated.' >&2
 fi
 
+# pkg may carry on after a failed +PRE_INSTALL, so say it again: the service refuses to start next to it.
+for marker in /usr/local/opnsense/version/freeradius /usr/local/etc/inc/plugins.inc.d/freeradius.inc; do
+	if [ -e "$marker" ]; then
+		echo 'Warning: os-freeradius is installed. It runs the same radiusd daemon, so Kazuha Hub RADIUS will refuse to start until it is removed.' >&2
+		break
+	fi
+done
+
 echo "===> Preparing Kazuha Hub RADIUS"
 # The generated configuration holds the shared secrets: only root and the
 # daemon's group may enter this directory.
@@ -17,6 +25,7 @@ chgrp freeradius /usr/local/etc/kazuhahub-radius 2>/dev/null || true
 chmod 0755 /usr/local/etc/rc.d/kazuhahub_radiusd
 chmod 0644 \
 	/usr/local/etc/inc/plugins.inc.d/kazuhahubradius.inc \
+	/usr/local/etc/newsyslog.conf.d/kazuhahub-radius.conf \
 	/usr/local/opnsense/scripts/kazuhahub-radius/check.sh \
 	/usr/local/opnsense/scripts/kazuhahub-radius/export_certs.php \
 	/usr/local/opnsense/scripts/kazuhahub-radius/homeservers.php \

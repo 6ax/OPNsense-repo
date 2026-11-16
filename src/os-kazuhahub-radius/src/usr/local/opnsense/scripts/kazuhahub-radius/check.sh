@@ -6,6 +6,7 @@
 #   check.sh last    print the stored result of the last check as JSON,
 #                    with the conflicts looked up again now
 #   check.sh start   as run, for the rc script: the exit status is the verdict
+#   check.sh record MESSAGE   store a refusal of the rc script as the failed result
 #   check.sh conflicts   print what keeps the service from starting, if anything;
 #                    the exit status is 1 then
 #
@@ -43,11 +44,28 @@ prepare() {
 # One line per thing that keeps the service from starting next to the daemon of
 # another package. Prints nothing when there is none.
 conflicts() {
-    if pkg info -e os-freeradius >/dev/null 2>&1; then
+    if pkg info -e os-freeradius >/dev/null 2>&1 \
+        || [ -e /usr/local/opnsense/version/freeradius ] \
+        || [ -e /usr/local/etc/inc/plugins.inc.d/freeradius.inc ]; then
         echo 'os-freeradius is installed. It runs the same daemon, so remove it before using this service.'
     fi
     if service -e 2>/dev/null | grep -q '/radiusd$'; then
         echo 'The stock radiusd service is enabled (radiusd_enable). Disable it before using this service.'
+    fi
+}
+
+# What the rendered configuration says about itself: the templates leave a marker
+# comment when nothing usable is left of a part, instead of writing a broken or
+# empty entry, and this turns each marker into a status message.
+markers() {
+    if grep -q '^[[:space:]]*# no-listen-address$' "$conf_dir/sites-enabled/default" 2>/dev/null; then
+        echo 'No usable listen interface: select a LAN interface with a static IPv4 address that is not an uplink and has no gateway.'
+    fi
+    if grep -q '^[[:space:]]*# no-usable-central$' "$conf_dir/proxy.conf" 2>/dev/null; then
+        echo 'No usable central server: enable at least one central server that has a valid address, port and shared secret.'
+    fi
+    if grep -q '^[[:space:]]*# no-usable-client$' "$conf_dir/clients.conf" 2>/dev/null; then
+        echo 'No usable access point: set the access point shared secret and at least one valid network.'
     fi
 }
 
@@ -77,6 +95,7 @@ emit() {
 }
 
 store() {
+    mkdir -p "$run_dir" || return 1
     printf '%s\n' "$1" > "$result_file"
     printf '%s\n' "$2" > "$message_file"
     date +%s > "$time_file"
@@ -93,6 +112,11 @@ run_check() {
     fi
     # Exporting may have written new files as root.
     prepare || return 1
+    found="$(markers)"
+    if [ -n "$found" ]; then
+        store failed "$found"
+        return 1
+    fi
     if output="$("$radiusd" -XC -d "$conf_dir" -n radiusd 2>&1)"; then
         store ok 'Configuration appears to be OK'
         return 0
@@ -116,6 +140,9 @@ run|start)
     fi
     exit "$status"
     ;;
+record)
+    store failed "$(printf '%s\n' "${2:-The service was refused.}" | head -n 3 | cut -c1-240)"
+    ;;
 conflicts)
     found="$(conflicts)"
     if [ -n "$found" ]; then
@@ -131,7 +158,7 @@ last)
     fi
     ;;
 *)
-    echo "usage: check.sh run|last|start|conflicts" >&2
+    echo "usage: check.sh run|last|start|record|conflicts" >&2
     exit 2
     ;;
 esac

@@ -84,7 +84,21 @@ expect 'freeradius3 is installed' 'pkg info -e freeradius3'
 FREERADIUS_VERSION="$(pkg query '%v' freeradius3)"
 RADDB_SUM="$(find /usr/local/etc/raddb -type f -exec sha256 -q {} + | sort | sha256 -q)"
 # The stock configuration must never be touched; it is compared again at the end.
-pkg add "$PKG" > "$W/install.out" 2>&1
+# +PRE_INSTALL reports the refusal when the files only os-freeradius installs are present. pkg 2.8 prints
+# "PRE-INSTALL script failed" and then installs the package anyway, so the refusal that actually holds is
+# the one at start: the status names the conflict and the rc script will not start.
+mkdir -p /usr/local/opnsense/version
+printf '{}\n' > /usr/local/opnsense/version/freeradius
+pkg add "$PKG" > "$W/refused-install.out" 2>&1
+expect 'the pre-install hook reports os-freeradius by its files and pkg flags the failure' \
+    "grep -q 'os-freeradius is installed' '$W/refused-install.out' && grep -q 'PRE-INSTALL script failed' '$W/refused-install.out'"
+expect 'the post-install hook warns about the conflict' "grep -q 'Warning: os-freeradius is installed' '$W/refused-install.out'"
+expect 'with the os-freeradius files present the conflict is reported' \
+    "sh /usr/local/opnsense/scripts/kazuhahub-radius/check.sh conflicts | grep -q 'os-freeradius is installed'"
+refuse 'with the os-freeradius files present the rc script refuses to start' 'service kazuhahub_radiusd onestart'
+expect 'nothing was started next to os-freeradius' '! pgrep -x radiusd'
+rm -f /usr/local/opnsense/version/freeradius
+pkg info -e os-kazuhahub-radius || pkg add "$PKG" > "$W/install.out" 2>&1
 expect 'the package installs' 'pkg info -e os-kazuhahub-radius'
 expect 'the rc script is installed and executable' '[ -x /usr/local/etc/rc.d/kazuhahub_radiusd ]'
 expect 'the configuration directory is 0750 root:freeradius' \
@@ -109,6 +123,13 @@ expect 'the settings are saved through the model, disabled first' \
     "php '$W/seed.php' settings '$SECRETS' disabled | grep -q '\"saved\"'"
 expect 'the model never hands a secret out' \
     "php '$W/seed.php' leak '$SECRETS' | grep -q '\"leaked\":0'"
+php "$W/seed.php" rules > "$W/rules.json"
+expect 'the model refuses an enabled central server without a secret on the row field' "grep -q '\"central_secret\":\"refused\"' '$W/rules.json'"
+expect 'the model refuses enabling the service without a usable central server' "grep -q '\"enabled_without_central\":\"refused\"' '$W/rules.json'"
+expect 'the model refuses a client network wider than /8' "grep -q '\"wide_network\":\"refused\"' '$W/rules.json'"
+expect 'the model refuses the LAN once a gateway of System > Gateways points at it' "grep -q '\"gateway_ref\":\"refused\"' '$W/rules.json'"
+expect 'newsyslog reads the shipped rotation entry for the daemon log' \
+    "newsyslog -nv -f /usr/local/etc/newsyslog.conf.d/kazuhahub-radius.conf 2>&1 | grep -q 'kazuhahub-radius/radius.log'"
 expect 'the secrets are in config.xml, where OPNsense keeps its secrets' "grep -q '$AP' /conf/config.xml"
 
 # --- generated configuration and checks ---------------------------------------
@@ -142,8 +163,7 @@ expect 'the status names the stock radiusd service as a conflict' "grep -q 'radi
 refuse 'the rc script refuses to start next to the stock radiusd service' 'service kazuhahub_radiusd onestart'
 expect 'nothing was started by the refused start' '! pgrep -x radiusd'
 rm -f /etc/rc.conf.d/radiusd
-expect 'the conflict is gone once the stock service is off' \
-    "! configctl kazuhahubradius lastcheck | grep -q 'radiusd_enable'"
+expect 'the conflict is gone once the stock service is off' 'sh /usr/local/opnsense/scripts/kazuhahub-radius/check.sh conflicts'
 
 # --- fake central servers and the proxy ----------------------------------------
 ifconfig lo0 alias 127.0.0.2/32
@@ -242,6 +262,18 @@ expect 'both fake central servers listen on their loopback aliases' \
 
 expect 'the settings are enabled through the model' \
     "php '$W/seed.php' settings '$SECRETS' enabled | grep -q '\"saved\"'"
+# An uplink gateway on the LAN added after the last render: the start renders again, finds no
+# usable listen interface and refuses, and the status says why.
+configctl template reload OPNsense/KazuhaHubRadius >/dev/null
+expect 'the rendered default site listens on the LAN before the gateway exists' "grep -q 'ipaddr = 10.0.0.1' $CONF/sites-enabled/default"
+php "$W/seed.php" gateway add >/dev/null
+refuse 'a start after a gateway was added to the LAN is refused' 'service kazuhahub_radiusd onestart'
+expect 'the start rendered the configuration again and the listener is gone' \
+    "grep -q 'no-listen-address' $CONF/sites-enabled/default && ! grep -q 'ipaddr = 10.0.0.1' $CONF/sites-enabled/default"
+configctl kazuhahubradius lastcheck > "$W/last-refused.json"
+expect 'the status records why the start was refused' "grep -q 'No usable listen interface' '$W/last-refused.json' && grep -q '\"result\":\"failed\"' '$W/last-refused.json'"
+expect 'nothing runs after the refused start' '! pgrep -u freeradius -x radiusd'
+php "$W/seed.php" gateway remove >/dev/null
 # What the reconfigure API does: stop, regenerate, start.
 configctl kazuhahubradius stop >/dev/null
 expect 'the reconfigure flow regenerates the configuration' \
@@ -252,9 +284,14 @@ sleep 2
 expect 'the service is running' 'configctl kazuhahubradius status | grep -q "is running"'
 expect 'the pid file exists and names a live process' \
     "kill -0 \$(cat /var/run/kazuhahub-radius/radiusd.pid)"
-expect 'it listens on the LAN address, the loopback tunnel and an unbound proxy socket, never on the WAN or a wildcard 1812' \
-    "! sockstat -4 -l | grep radiusd | grep -E '198\\.23\\.159\\.179|\\*:1812|0\\.0\\.0\\.0:1812' && sockstat -4 -l | grep radiusd | grep -q '10.0.0.1:1812' && sockstat -4 -l | grep radiusd | grep -q '127.0.0.1:18120'"
-expect 'the control socket is a root-only socket' \
+# The proxy socket toward the central servers is an ephemeral wildcard UDP socket: it is only ever
+# used for outbound requests to the configured central servers (no listen section opens it to
+# clients), which is why the check pins it to one socket that is not on port 1812.
+# Only the proxy's own sockets: the fake central servers are radiusd processes too.
+sockstat -4 -l | awk -v pid="$(cat /var/run/kazuhahub-radius/radiusd.pid)" '$3 == pid {print $6}' | sort > "$W/sockets.txt"
+expect 'it listens on the LAN address and the loopback tunnel; the only other socket is the one outbound proxy socket on an ephemeral port, never 1812 or the WAN address' \
+    "[ \"\$(grep -c '^\\*:' '$W/sockets.txt')\" = 1 ] && ! grep -q -E '^\\*:(1812|18120)\$' '$W/sockets.txt' && ! grep -q -E '198\\.23\\.159\\.179|^0\\.0\\.0\\.0:' '$W/sockets.txt' && grep -q '^10\\.0\\.0\\.1:1812\$' '$W/sockets.txt' && grep -q '^127\\.0\\.0\\.1:18120\$' '$W/sockets.txt' && [ \"\$(wc -l < '$W/sockets.txt' | tr -d ' ')\" = 3 ]"
+expect 'the control socket lives in a 0750 directory owned by the daemon' \
     "[ -S /var/run/kazuhahub-radius/radiusd.sock ] && [ \"\$(stat -f '%Su' /var/run/kazuhahub-radius)\" = freeradius ] && [ \"\$(stat -f '%Lp' /var/run/kazuhahub-radius)\" = 750 ]"
 expect 'the daemon runs as the freeradius user' \
     "[ \"\$(ps -o user= -p \$(cat /var/run/kazuhahub-radius/radiusd.pid) | tr -d ' ')\" = freeradius ]"

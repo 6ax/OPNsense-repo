@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # PROVIDE: kazuhahub_radiusd
-# REQUIRE: NETWORKING
+# REQUIRE: NETWORKING configd
 # KEYWORD: shutdown
 #
 # The RADIUS proxy for the Kazuha Hub Wi-Fi: the FreeRADIUS daemon of the
@@ -21,6 +21,7 @@ load_rc_config "$name"
 
 kazuhahub_radiusd_dir="/usr/local/etc/kazuhahub-radius"
 kazuhahub_radiusd_check="/usr/local/opnsense/scripts/kazuhahub-radius/check.sh"
+kazuhahub_radiusd_configctl="/usr/local/sbin/configctl"
 
 command="/usr/local/sbin/radiusd"
 command_args="-d ${kazuhahub_radiusd_dir} -n radiusd"
@@ -38,14 +39,27 @@ kazuhahub_radiusd_addresses()
     sed -n 's/^[[:space:]]*ipaddr = \(.*\)$/\1/p' "${kazuhahub_radiusd_dir}/sites-enabled/default"
 }
 
+# A refusal is also written to the check result, so the status page and the
+# widget say why the service is not running.
+kazuhahub_radiusd_refuse()
+{
+    warn "$1"
+    /bin/sh "${kazuhahub_radiusd_check}" record "$1"
+    return 1
+}
+
+# The listen addresses follow the interfaces, which may have changed since the
+# configuration was last rendered, so every start and reload renders it again.
+kazuhahub_radiusd_render()
+{
+    "${kazuhahub_radiusd_configctl}" template reload OPNsense/KazuhaHubRadius >/dev/null 2>&1 \
+        || warn "the configuration could not be rendered again; using the last one."
+}
+
 # At boot the interfaces may come up after this script runs, so give them a
 # moment; a listener that cannot bind would stop the daemon.
 kazuhahub_radiusd_wait_addresses()
 {
-    if grep -q '^[[:space:]]*# no-listen-address' "${kazuhahub_radiusd_dir}/sites-enabled/default"; then
-        warn "no usable listen interface is selected; select a LAN interface with a static IPv4 address."
-        return 1
-    fi
     _tries=0
     while :; do
         _missing=""
@@ -56,7 +70,7 @@ kazuhahub_radiusd_wait_addresses()
         done
         [ -z "${_missing}" ] && return 0
         if [ "${_tries}" -ge 30 ]; then
-            warn "the listen address is not configured on this firewall:${_missing}"
+            kazuhahub_radiusd_refuse "the listen address is not configured on this firewall:${_missing}"
             return 1
         fi
         sleep 1
@@ -67,15 +81,19 @@ kazuhahub_radiusd_wait_addresses()
 kazuhahub_radiusd_prestart()
 {
     if ! _conflicts="$(/bin/sh "${kazuhahub_radiusd_check}" conflicts)"; then
-        warn "refusing to start: ${_conflicts}"
+        kazuhahub_radiusd_refuse "refusing to start: ${_conflicts}"
         return 1
     fi
+    kazuhahub_radiusd_render
+    # The check refuses a configuration with no usable listen interface, central
+    # server or access point, and records why.
     /bin/sh "${kazuhahub_radiusd_check}" start || return 1
     kazuhahub_radiusd_wait_addresses
 }
 
 kazuhahub_radiusd_prereload()
 {
+    kazuhahub_radiusd_render
     /bin/sh "${kazuhahub_radiusd_check}" start
 }
 

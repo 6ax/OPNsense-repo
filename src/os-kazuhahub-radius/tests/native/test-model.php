@@ -58,11 +58,14 @@ file_put_contents($fixture, '<?xml version="1.0"?><opnsense><system><hostname>pr
     '<opt4><if>vtnet4</if><ipaddr>10.9.0.1</ipaddr><subnet>24</subnet><descr>OFF</descr></opt4>' .
     '<opt5><if>vtnet5</if><enable>1</enable><descr>NOIP</descr></opt5>' .
     '<opt6><if>vtnet6</if><enable>1</enable><ipaddr>10.6.0.1</ipaddr><subnet>24</subnet><blockpriv>1</blockpriv><descr>BLOCKED</descr></opt6>' .
+    '<opt8><if>vtnet8</if><enable>1</enable><ipaddr>10.8.0.1</ipaddr><subnet>24</subnet><descr>UPLINK</descr></opt8>' .
     '<opt7><if>vtnet7</if><enable>1</enable><ipaddr>10.7.0.1</ipaddr><subnet>24</subnet><blockpriv>0</blockpriv><blockbogons>0</blockbogons><descr>IOT</descr></opt7>' .
     '</interfaces>' .
+    '<OPNsense><Gateways><gateway_item><disabled>0</disabled><name>UP_GW</name><interface>opt8</interface><ipprotocol>inet</ipprotocol><gateway>10.8.0.254</gateway></gateway_item></Gateways></OPNsense>' .
+    '<gateways><gateway_item><name>OLD_GW</name><interface>opt9</interface></gateway_item></gateways>' .
     '<cert><refid>cert1</refid><descr>Server</descr><crt>AAAA</crt><prv>BBBB</prv></cert>' .
     '<ca><refid>ca1</refid><descr>Authority</descr><crt>CCCC</crt></ca>' .
-    '<unknown attr="retain">SENTINEL_UNKNOWN</unknown><OPNsense/></opnsense>');
+    '<unknown attr="retain">SENTINEL_UNKNOWN</unknown></opnsense>');
 $config = \OPNsense\Core\Config::getInstance();
 $handle = new ReflectionProperty($config, 'config_file_handle');
 fclose($handle->getValue($config));
@@ -100,7 +103,7 @@ try {
     model_check(count(model_validate($model, true)) === 0, 'The defaults do not validate on a static LAN.');
     $options = array_keys($model->interfaces->getNodeData());
     sort($options);
-    model_check($options === ['lan', 'opt1', 'opt4', 'opt6', 'opt7', 'wan'] || $options === ['lan', 'opt1', 'opt6', 'opt7', 'wan'],
+    model_check($options === ['lan', 'opt1', 'opt4', 'opt6', 'opt7', 'opt8', 'wan'] || $options === ['lan', 'opt1', 'opt6', 'opt7', 'opt8', 'wan'],
         'Only enabled static interfaces may be offered: ' . json_encode($options));
 
     /* The first run offers both central servers and the LAN subnet; the secrets stay empty. */
@@ -108,6 +111,7 @@ try {
     $addresses = [];
     foreach ($model->centrals->central->iterateItems() as $central) {
         $addresses[] = (string)$central->address . ':' . (string)$central->port . ':' . (string)$central->sequence;
+        model_check((string)$central->enabled === '0', 'A seeded central server is enabled without a secret.');
         model_check($central->secret->getValue() === '', 'A seeded central server has a secret.');
     }
     model_check($addresses === ['100.88.32.2:11812:10', '100.88.33.1:11812:20'], 'The seeded centrals changed: ' . json_encode($addresses));
@@ -128,9 +132,10 @@ try {
         ['opt4', ['interfaces']],            /* disabled */
         ['opt5', ['interfaces']],            /* no IPv4 address */
         ['opt6', ['interfaces']],            /* block private networks: a WAN option */
+        ['opt8', ['interfaces']],            /* a gateway of System > Gateways points at it (26.7 model) */
         ['lan,wan', ['interfaces']],
         ['lan,opt7,opt1', ['interfaces']],
-        ['opt9', ['interfaces']],            /* does not exist */
+        ['opt9', ['interfaces']],            /* does not exist (and an old-style gateway names it) */
         ['', ['interfaces']],                /* required */
     ];
     foreach ($cases as [$value, $expected]) {
@@ -158,6 +163,9 @@ try {
         ['client_networks', '192.168.0.0/22,10.7.0.0/24', []],
         ['client_networks', '192.168.0.1', []],
         ['client_networks', '192.168.0.1/22', ['client_networks']],     /* host bits */
+        ['client_networks', '10.0.0.0/7', ['client_networks']],         /* wider than the template keeps */
+        ['client_networks', '0.0.0.0/0', ['client_networks']],
+        ['client_networks', '10.0.0.0/8', []],
         ['client_networks', 'fe80::/10', ['client_networks']],
         ['client_networks', 'nonsense', ['client_networks']],
         ['client_secret', $apSecret, []],
@@ -207,12 +215,46 @@ try {
     $candidate->servercert = 'cert1';
     $candidate->ca = 'ca1';
     $candidate->client_secret = $apSecret;
+    /* The seeded central servers are off and have no secret, so there is nothing usable to enable. */
     model_check(model_fields(model_validate($candidate, false)) === ['enabled'],
-        'Enabling with central servers that have no secret validated.');
+        'Enabling with no usable central server validated.');
+    foreach ($candidate->centrals->central->iterateItems() as $central) {
+        $central->enabled = '1';
+    }
+    $fields = model_fields(model_validate($candidate, false));
+    /* One message on each row's secret field, and none usable, so the service itself is refused as well. */
+    model_check(count($fields) === 3 && $fields[2] === 'enabled' && substr($fields[0], -7) === '.secret' && substr($fields[1], -7) === '.secret',
+        'Enabled central servers without a secret validated: ' . json_encode($fields));
     foreach ($candidate->centrals->central->iterateItems() as $central) {
         $central->secret = $centralSecret;
     }
     model_check(count(model_validate($candidate, false)) === 0, 'A complete configuration does not validate.');
+
+    /* A switched-on central server needs a usable secret whatever the service does, and the message sits on
+       the row's own field, which is what the grid's add, set and toggle actions look at. */
+    foreach (['0', '1'] as $service) {
+        $candidate = model_fresh();
+        $candidate->enabled = $service;
+        $node = model_central($candidate, '10.99.0.1', '11812', '', '1');
+        $fields = model_fields(model_validate($candidate, false));
+        model_check(in_array($node->secret->__reference, $fields, true), "service=$service: no message on the secret field.");
+        $off = model_central($candidate, '10.99.0.2', '11812', '', '0', '20');
+        model_check(!in_array($off->secret->__reference, model_fields(model_validate($candidate, false)), true),
+            'A disabled central server was asked for a secret.');
+        $node->secret = 'bad secret!';
+        model_check(in_array($node->secret->__reference, model_fields(model_validate($candidate, false)), true), 'A bad secret was accepted.');
+        $node->secret = $centralSecret;
+        model_check(!in_array($node->secret->__reference, model_fields(model_validate($candidate, false)), true), 'A good secret was refused.');
+    }
+    /* Switching the service on with no usable central server is refused. */
+    $candidate = model_fresh();
+    $candidate->enabled = '1';
+    $candidate->servercert = 'cert1';
+    $candidate->ca = 'ca1';
+    $candidate->client_secret = $apSecret;
+    model_check(model_fields(model_validate($candidate, false)) === ['enabled'], 'No central server at all validated.');
+    model_central($candidate, '10.99.0.1', '11812', $centralSecret, '0');
+    model_check(model_fields(model_validate($candidate, false)) === ['enabled'], 'Only a disabled central server validated.');
 
     /* Secrets are update-only: never read back, kept by an empty write, replaced by a new one. */
     $model = model_fresh();
