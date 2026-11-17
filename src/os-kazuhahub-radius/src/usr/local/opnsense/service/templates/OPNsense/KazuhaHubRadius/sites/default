@@ -1,0 +1,72 @@
+# Kazuha Hub RADIUS proxy: the virtual server the access points talk to.
+# Rendered from the OPNsense configuration; manual edits are overwritten.
+{% set address_pattern = '^(?!0\\.|127\\.|22[4-9]\\.|2[3-5][0-9]\\.)((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\Z' %}
+{% set general = OPNsense.kazuhahubradius.general if helpers.exists('OPNsense.kazuhahubradius.general') else {} %}
+{% set ns = namespace(addresses=[], uplinks=[]) %}
+{#   Every interface a gateway of System > Gateways points at is an uplink: 26.7 keeps them in the Gateways
+     model, older configurations under gateways. #}
+{% for gateway in helpers.toList('OPNsense.Gateways.gateway_item') + helpers.toList('gateways.gateway_item') %}
+{%   if gateway is mapping %}
+{%     do ns.uplinks.append((gateway.get('interface') or '') | string | trim) %}
+{%   endif %}
+{% endfor %}
+{% for name in (general.get('interfaces') or '').split(',') %}
+{%   set key = name | trim %}
+{#   Only a static, local interface may carry the listener; the WAN, an interface with a gateway and a
+     dynamic address never do, whatever the settings say. #}
+{%   if key and key != 'wan' and key not in ns.uplinks and interfaces is defined and key in interfaces and interfaces[key] is mapping %}
+{%     set interface = interfaces[key] %}
+{%     if interface.get('enable') is not none and interface.get('enable') != '0'
+         and (interface.get('ipaddr', '') | string) is regex_match(address_pattern)
+         and not interface.get('gateway')
+         and interface.get('blockpriv') in [none, '0'] and interface.get('blockbogons') in [none, '0']
+         and interface.ipaddr not in ns.addresses %}
+{%       do ns.addresses.append(interface.ipaddr) %}
+{%     endif %}
+{%   endif %}
+{% endfor %}
+
+server default {
+{% for address in ns.addresses %}
+	listen {
+		type = auth
+		ipaddr = {{ address }}
+		port = 1812
+	}
+
+{% endfor %}
+{% if not ns.addresses %}
+	# no-listen-address
+	# No usable interface is selected. The server stays on the loopback so it can
+	# never fall back to a wildcard listener; the configuration check refuses it.
+	listen {
+		type = auth
+		ipaddr = 127.0.0.1
+		port = 1812
+	}
+
+{% endif %}
+	authorize {
+		filter_username
+		eap {
+			ok = return
+		}
+		reject
+	}
+
+	authenticate {
+		eap
+	}
+
+	post-proxy {
+		eap
+	}
+
+	post-auth {
+		Post-Auth-Type REJECT {
+			attr_filter.access_reject
+			eap
+			remove_reply_message_if_eap
+		}
+	}
+}

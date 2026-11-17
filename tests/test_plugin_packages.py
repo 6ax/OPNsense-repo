@@ -97,6 +97,8 @@ BUILDS = {
                        'deps': {'os-kazuhahub-repo': {'origin': 'opnsense/os-kazuhahub-repo', 'version': '1.0.0'}}},
     'os-wanguard': {'abi': WILDCARD, 'copy': [('src', '/')],
                     'deps': {'python313': {'origin': 'lang/python313', 'version': '>=0'}}},
+    'os-kazuhahub-radius': {'abi': WILDCARD, 'copy': [('src', '/')],
+                            'deps': {'freeradius3': {'origin': 'net/freeradius3', 'version': '>=0'}}},
     'os-ttyd': {'abi': NATIVE, 'copy': [('src', '/')],
                 'shared_copy': [('src/common/config_backup.py', '/usr/local/opnsense/scripts/ttyd/config_backup.py'),
                                 ('src/common/config_backup.php', '/usr/local/opnsense/scripts/ttyd/config_backup.php')],
