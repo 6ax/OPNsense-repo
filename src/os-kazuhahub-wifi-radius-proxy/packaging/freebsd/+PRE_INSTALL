@@ -1,0 +1,30 @@
+#!/bin/sh
+set -eu
+
+ABI="$(pkg config ABI 2>/dev/null || pkg -vv 2>/dev/null | awk -F'"' '/ABI =/ {print $2; exit}' || true)"
+
+case "$ABI" in
+	FreeBSD:14:amd64|FreeBSD:15:amd64|FreeBSD:16:amd64)
+		;;
+	*)
+		echo "===> Unsupported ABI: ${ABI:-unknown}" >&2
+		echo "===> Supported: FreeBSD:14/15/16:amd64" >&2
+		exit 1
+		;;
+esac
+
+# os-freeradius runs the same radiusd daemon from the same package; the two
+# cannot share it, so this plugin refuses to install next to it. The package
+# database is not consulted: pkg info is unreliable inside a pkg transaction.
+# These are files only os-freeradius 1.10 installs (its product version file,
+# its plugin hook and its model), found in the package's own file list.
+for marker in /usr/local/opnsense/version/freeradius \
+	/usr/local/etc/inc/plugins.inc.d/freeradius.inc \
+	/usr/local/opnsense/mvc/app/models/OPNsense/Freeradius/General.xml; do
+	if [ -e "$marker" ]; then
+		echo "===> os-freeradius is installed. It runs the same radiusd daemon and cannot coexist with os-kazuhahub-wifi-radius-proxy." >&2
+		echo "===> Remove os-freeradius first, then install this package again." >&2
+		exit 1
+	fi
+done
+exit 0

@@ -27,12 +27,12 @@ PORTABLE_PHP = {
     'os-frp': [('src/os-frp/tests/native/test-backup-fields.php',)],
     'os-wanguard': [('src/os-wanguard/tests/native/test-newwanip.php',),
                     ('src/os-wanguard/tests/native/test-controller.php',)],
-    'os-kazuhahub-wifi-proxy': [('src/os-kazuhahub-wifi-proxy/tests/native/test-listen.php',),
-                            ('src/os-kazuhahub-wifi-proxy/tests/native/test-controller.php',),
-                            ('src/os-kazuhahub-wifi-proxy/tests/native/test-certs.php',),
-                            ('src/os-kazuhahub-wifi-proxy/tests/native/test-certsync.php',),
-                            ('src/os-kazuhahub-wifi-proxy/tests/native/test-homeservers.php',),
-                            ('src/os-kazuhahub-wifi-proxy/tests/native/test-plugin.php',)],
+    'os-kazuhahub-wifi-radius-proxy': [('src/os-kazuhahub-wifi-radius-proxy/tests/native/test-listen.php',),
+                                       ('src/os-kazuhahub-wifi-radius-proxy/tests/native/test-controller.php',),
+                                       ('src/os-kazuhahub-wifi-radius-proxy/tests/native/test-certs.php',),
+                                       ('src/os-kazuhahub-wifi-radius-proxy/tests/native/test-certsync.php',),
+                                       ('src/os-kazuhahub-wifi-radius-proxy/tests/native/test-homeservers.php',),
+                                       ('src/os-kazuhahub-wifi-radius-proxy/tests/native/test-plugin.php',)],
 }
 NATIVE_PHP = {
     'common': [('src/common/tests/native/test-backup-cas.php',),
@@ -48,7 +48,7 @@ NATIVE_PHP = {
                     ('src/os-wanguard/tests/native/test-private-parity.php',),
                     ('src/os-wanguard/tests/native/check-undefined.php',),
                     ('src/os-wanguard/tests/native/test-core-contract.php',)],
-    'os-kazuhahub-wifi-proxy': [('src/os-kazuhahub-wifi-proxy/tests/native/test-model.php',)],
+    'os-kazuhahub-wifi-radius-proxy': [('src/os-kazuhahub-wifi-radius-proxy/tests/native/test-model.php',)],
 }
 NATIVE_PYTHON = {
     'shared': ['tests/native/test-utility-upgrade.py'],

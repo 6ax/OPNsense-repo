@@ -1,0 +1,9 @@
+<menu>
+    <Services>
+        <KazuhaHubWifiRadiusProxy VisibleName="Kazuha Hub Wi-Fi RADIUS" order="93" cssClass="fa fa-wifi fa-fw">
+            <Settings order="10" VisibleName="Settings" url="/ui/kazuhahubwifiradiusproxy">
+                <item url="/ui/kazuhahubwifiradiusproxy/*" visibility="hidden"/>
+            </Settings>
+        </KazuhaHubWifiRadiusProxy>
+    </Services>
+</menu>

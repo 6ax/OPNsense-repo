@@ -1,6 +1,6 @@
 #!/bin/sh
-# Removing the transitional package must leave os-kazuhahub-wifi-proxy, its
-# settings and its service exactly as they are.
+# Removing the transitional package must leave os-kazuhahub-wifi-radius-proxy,
+# its settings and its service exactly as they are.
 [ -n "${PKG_UPGRADE+x}" ] && exit 0
 if [ -x /usr/local/opnsense/scripts/firmware/register.php ]; then
     /usr/local/opnsense/scripts/firmware/register.php remove os-kazuhahub-radius >/dev/null 2>&1 || true

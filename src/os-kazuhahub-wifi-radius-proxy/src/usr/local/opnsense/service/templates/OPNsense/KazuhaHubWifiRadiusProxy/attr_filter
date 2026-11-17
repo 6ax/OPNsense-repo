@@ -1,0 +1,15 @@
+#
+# Kazuha Hub Wi-Fi RADIUS: what an Access-Reject may carry.
+# Rendered from the OPNsense configuration; manual edits are overwritten.
+#
+# The RFCs allow only a few attributes in an Access-Reject; everything else is
+# removed. Proxy-State stays so a proxied reject still matches its request.
+#
+DEFAULT
+	EAP-Message =* ANY,
+	State =* ANY,
+	Message-Authenticator =* ANY,
+	Error-Cause =* ANY,
+	Reply-Message =* ANY,
+	MS-CHAP-Error =* ANY,
+	Proxy-State =* ANY
