@@ -84,6 +84,13 @@ def file_checksum_matches(entry, content):
     return False
 
 
+def package_sum_matches(value, content):
+    """Accept both catalog package sums: plain SHA256 hex (pkg before 2.8) and 2$BLAKE2b z-base32."""
+    if isinstance(value, str) and re.fullmatch('[0-9a-f]{64}', value):
+        return value == hashlib.sha256(content).hexdigest()
+    return file_checksum_matches(value, content)
+
+
 def target_module(source):
     path = source / 'src/os-mihomo/packaging/target.py'
     if not path.exists():
@@ -782,7 +789,7 @@ def verify(site, source=None):
             path = (repo / item['path']).resolve()
             if not path.is_relative_to((repo / 'All').resolve()) or path.suffix != '.pkg' or item['abi'] not in {abi, 'FreeBSD:*:amd64'}:
                 raise ValueError('Unsafe package path or incorrect ABI.')
-            if hashlib.sha256(path.read_bytes()).hexdigest() != item['sum']:
+            if not package_sum_matches(item.get('sum'), path.read_bytes()):
                 raise ValueError('Package digest verification failed.')
             count += 1
             listed.add(path)

@@ -47,6 +47,8 @@ What a package may contain is narrower than what a build can produce. A package 
 
 Catalog creation scans an isolated `All/` tree for each target. This prevents recursive `pkg repo` scans from mixing nested series. Current 26.7 retains `repo/FreeBSD:15:amd64`; other series use `repo/ABI/SERIES` when dependencies differ. The repository hook selects these addresses using `opnsense-version -x`, rather than an unsupported pkg series placeholder.
 
+pkg 2.8, which OPNsense 26.7 now ships, writes each catalog package sum as `2$` followed by the BLAKE2b-512 digest in libpkg's z-base32 alphabet; earlier pkg wrote a plain SHA256 hex digest. The verifier and `check-upgrade.py` accept both, so catalogs signed before and after the signer's pkg upgrade still verify.
+
 Do not treat pkg update exit status alone as signature acceptance. Check that the expected usable catalog exists; some pkg versions return zero after rejecting a signature.
 
 ## Publish from a clean checkout

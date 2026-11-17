@@ -211,6 +211,16 @@ class UpgradeReadinessTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Product ABI differs'):
             self.check()
 
+    def test_pkg_28_catalog_sum_is_accepted(self):
+        content = self.assets[PACKAGE_PATH]
+        self.catalog_entry['sum'] = '2$' + readiness.verification.zbase32(hashlib.blake2b(content).digest())
+        self.resign_catalog()
+        self.assertEqual(self.entry, self.check())
+        self.catalog_entry['sum'] = '2$' + readiness.verification.zbase32(hashlib.blake2b(b'other').digest())
+        self.resign_catalog()
+        with self.assertRaisesRegex(ValueError, 'missing from its signed catalog'):
+            self.check()
+
     def test_package_missing_from_signed_catalog_is_rejected(self):
         self.catalog_entry['path'] = 'All/os-mihomo-1.1.0.pkg'
         self.resign_catalog()

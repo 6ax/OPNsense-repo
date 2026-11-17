@@ -50,12 +50,13 @@ def check(url, abi, series):
         catalog = download(repository + '/packagesite.pkg')
         verification.verify_catalog(site / repository / 'data.pkg', 'data', key)
         manifests = [json.loads(line) for line in verification.verify_catalog(catalog, 'packagesite.yaml', key).splitlines() if line.strip()]
-        match = [m for m in manifests if m.get('path') == 'All/' + package_path.name and m.get('name') == 'os-mihomo' and m.get('abi') == abi and m.get('sum') == entry['sha256']]
+        package = download(entry['path'])
+        content = package.read_bytes()
+        if hashlib.sha256(content).hexdigest() != entry['sha256']:
+            raise ValueError('The target package digest differs from the signed report.')
+        match = [m for m in manifests if m.get('path') == 'All/' + package_path.name and m.get('name') == 'os-mihomo' and m.get('abi') == abi and verification.package_sum_matches(m.get('sum'), content)]
         if len(match) != 1:
             raise ValueError('The tested target package is missing from its signed catalog.')
-        package = download(entry['path'])
-        if hashlib.sha256(package.read_bytes()).hexdigest() != entry['sha256']:
-            raise ValueError('The target package digest differs from the signed report.')
         verification.validate_attestation(entry, verification.manifest_of(package))
         return entry
 
