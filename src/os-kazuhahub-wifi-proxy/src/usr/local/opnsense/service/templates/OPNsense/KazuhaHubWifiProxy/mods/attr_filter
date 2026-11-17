@@ -1,7 +1,0 @@
-# Kazuha Hub Wi-Fi Proxy: the attribute filter for rejects.
-# Rendered from the OPNsense configuration; manual edits are overwritten.
-
-attr_filter attr_filter.access_reject {
-	key = "%{User-Name}"
-	filename = ${modconfdir}/attr_filter/access_reject
-}

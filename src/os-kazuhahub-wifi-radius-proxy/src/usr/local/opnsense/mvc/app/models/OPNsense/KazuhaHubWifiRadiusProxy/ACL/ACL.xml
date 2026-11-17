@@ -1,0 +1,9 @@
+<acl>
+    <page-services-kazuhahubwifiradiusproxy>
+        <name>Services: Kazuha Hub Wi-Fi RADIUS</name>
+        <patterns>
+            <pattern>ui/kazuhahubwifiradiusproxy/*</pattern>
+            <pattern>api/kazuhahubwifiradiusproxy/*</pattern>
+        </patterns>
+    </page-services-kazuhahubwifiradiusproxy>
+</acl>

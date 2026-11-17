@@ -2,9 +2,9 @@
 set -eu
 
 PKG_NAME="${PKG_NAME:-os-kazuhahub-radius}"
-VERSION="${VERSION:-1.1.0}"
+VERSION="${VERSION:-1.2.0}"
 ORIGIN="${ORIGIN:-opnsense/os-kazuhahub-radius}"
-COMMENT="${COMMENT:-Transitional package: the Wi-Fi proxy is now os-kazuhahub-wifi-proxy}"
+COMMENT="${COMMENT:-Transitional package: the Wi-Fi RADIUS proxy is now os-kazuhahub-wifi-radius-proxy}"
 MAINTAINER="${MAINTAINER:-https://github.com/KazuhaHub/}"
 WWW="${WWW:-https://github.com/KazuhaHub/OPNsense-repo}"
 PREFIX="${PREFIX:-/usr/local}"

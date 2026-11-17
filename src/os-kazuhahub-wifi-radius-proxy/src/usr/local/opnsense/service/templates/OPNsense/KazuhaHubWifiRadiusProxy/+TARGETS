@@ -1,0 +1,12 @@
+rc.conf.d:/etc/rc.conf.d/kazuhahub_wifiradiusproxy
+radiusd.conf:/usr/local/etc/kazuhahub-wifi-radius-proxy/radiusd.conf
+clients.conf:/usr/local/etc/kazuhahub-wifi-radius-proxy/clients.conf
+proxy.conf:/usr/local/etc/kazuhahub-wifi-radius-proxy/proxy.conf
+mods/eap:/usr/local/etc/kazuhahub-wifi-radius-proxy/mods-enabled/eap
+mods/always:/usr/local/etc/kazuhahub-wifi-radius-proxy/mods-enabled/always
+mods/attr_filter:/usr/local/etc/kazuhahub-wifi-radius-proxy/mods-enabled/attr_filter
+policy:/usr/local/etc/kazuhahub-wifi-radius-proxy/policy.d/kazuhahub
+attr_filter:/usr/local/etc/kazuhahub-wifi-radius-proxy/mods-config/attr_filter/access_reject
+sites/default:/usr/local/etc/kazuhahub-wifi-radius-proxy/sites-enabled/default
+sites/inner-tunnel:/usr/local/etc/kazuhahub-wifi-radius-proxy/sites-enabled/inner-tunnel
+sites/control:/usr/local/etc/kazuhahub-wifi-radius-proxy/sites-enabled/control

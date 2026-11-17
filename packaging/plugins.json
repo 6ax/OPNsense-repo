@@ -182,23 +182,32 @@
       "deps": {"python313": "lang/python313"},
       "version_file": {"path": "/usr/local/opnsense/version/wanguard", "format": "json"}
     },
+    "os-kazuhahub-wifi-radius-proxy": {
+      "staging": "tree",
+      "abi": "independent",
+      "version": "1.2.0",
+      "stage": {"src": "/"},
+      "deps": {"freeradius3": "net/freeradius3"},
+      "version_file": {"path": "/usr/local/opnsense/version/kazuhahub-wifi-radius-proxy", "format": "json"},
+      "notes": "Shell, PHP and configuration templates only. The generated configuration directory, the run directory and the log directory are created by the install hook and the rc script, never by the package manifest."
+    },
     "os-kazuhahub-wifi-proxy": {
       "staging": "tree",
       "abi": "independent",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "stage": {"src": "/"},
-      "deps": {"freeradius3": "net/freeradius3"},
+      "deps": {"os-kazuhahub-wifi-radius-proxy": "opnsense/os-kazuhahub-wifi-radius-proxy"},
       "version_file": {"path": "/usr/local/opnsense/version/kazuhahub-wifi-proxy", "format": "json"},
-      "notes": "Shell, PHP and configuration templates only. The generated configuration directory, the run directory and the log directory are created by the install hook and the rc script, never by the package manifest."
+      "notes": "Transitional name used by 1.1.0, before the rename to os-kazuhahub-wifi-radius-proxy. It depends on the renamed package so that a firmware update installs it, and its install hook removes what the former service left behind and starts the renamed one."
     },
     "os-kazuhahub-radius": {
       "staging": "tree",
       "abi": "independent",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "stage": {"src": "/"},
-      "deps": {"os-kazuhahub-wifi-proxy": "opnsense/os-kazuhahub-wifi-proxy"},
+      "deps": {"os-kazuhahub-wifi-radius-proxy": "opnsense/os-kazuhahub-wifi-radius-proxy"},
       "version_file": {"path": "/usr/local/opnsense/version/kazuhahub-radius", "format": "json"},
-      "notes": "Transitional name from before the rename to os-kazuhahub-wifi-proxy. It depends on the renamed package so that a firmware update installs it, and its install hook removes what the former service left behind and starts the renamed one."
+      "notes": "Transitional name used until 1.0.0, before the rename to os-kazuhahub-wifi-radius-proxy. It depends on the renamed package so that a firmware update installs it, and its install hook removes what the former service left behind and starts the renamed one."
     },
     "os-ddclient-opnwall": {
       "staging": "tree",

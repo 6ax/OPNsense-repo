@@ -1,9 +1,9 @@
 #!/bin/sh
 set -eu
-# The proxy itself is os-kazuhahub-wifi-proxy, installed as this package's
-# dependency; its first start takes the former settings over from config.xml.
-# Registration stays so that the Plugins page lists this package and an
-# operator can remove it there once it is no longer needed.
+# The proxy itself is os-kazuhahub-wifi-radius-proxy, installed as this
+# package's dependency; its install takes the former settings over from
+# config.xml. Registration stays so that the Plugins page lists this package and
+# an operator can remove it there once it is no longer needed.
 if [ -x /usr/local/opnsense/scripts/firmware/register.php ]; then
     /usr/local/opnsense/scripts/firmware/register.php install os-kazuhahub-radius >/dev/null 2>&1 || true
 fi
@@ -14,21 +14,32 @@ fi
 # The former service: its package scripts already stopped it, and an upgrade
 # keeps its generated files. Make sure no daemon of it is left, then remove
 # what it generated: the rc setting, the configuration with its secrets and the
-# exported key, the runtime state and the log.
+# exported key, any synced certificate set, the runtime state and the log.
 old_pid=/var/run/kazuhahub-radius/radiusd.pid
 if [ -s "$old_pid" ] && kill -0 "$(cat "$old_pid")" 2>/dev/null; then
-    kill "$(cat "$old_pid")" 2>/dev/null || true
-    sleep 2
+    pid="$(cat "$old_pid")"
+    kill "$pid" 2>/dev/null || true
+    i=0
+    while [ "$i" -lt 10 ] && kill -0 "$pid" 2>/dev/null; do
+        sleep 1
+        i=$((i + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+        kill -9 "$pid" 2>/dev/null || true
+    fi
 fi
 rm -f /etc/rc.conf.d/kazuhahub_radiusd
 rm -rf /usr/local/etc/kazuhahub-radius /var/run/kazuhahub-radius /var/log/kazuhahub-radius
 rm -f /var/lib/php/tmp/opnsense_menu_cache.xml /var/lib/php/tmp/opnsense_acl_cache.json
 service configd restart >/dev/null 2>&1 || true
+# Rebuild the crontab now that the former plugin hook is gone, so none of its
+# jobs is left behind.
+configctl cron restart >/dev/null 2>&1 || true
 
 # The renamed service may have been installed while the former daemon still
 # held port 1812; start it now that the port is free.
-if grep -qs '^kazuhahub_wifiproxy_enable="YES"' /etc/rc.conf.d/kazuhahub_wifiproxy; then
-    service kazuhahub_wifiproxy restart >/dev/null 2>&1 \
-        || echo 'Warning: Kazuha Hub Wi-Fi Proxy could not be restarted.' >&2
+if grep -qs '^kazuhahub_wifiradiusproxy_enable="YES"' /etc/rc.conf.d/kazuhahub_wifiradiusproxy; then
+    service kazuhahub_wifiradiusproxy restart >/dev/null 2>&1 \
+        || echo 'Warning: Kazuha Hub Wi-Fi RADIUS could not be restarted.' >&2
 fi
 exit 0

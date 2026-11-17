@@ -8,7 +8,7 @@ abi: "@ABI@"
 arch: "@ARCH@"
 prefix: "@PREFIX@"
 flatsize: @FLATSIZE@
-deps: { freeradius3: { origin: "net/freeradius3", version: ">=0" } }
+deps: { os-kazuhahub-wifi-radius-proxy: { origin: "opnsense/os-kazuhahub-wifi-radius-proxy", version: "1.2.0" } }
 desc: <<EOD
 @DESC@
 EOD
