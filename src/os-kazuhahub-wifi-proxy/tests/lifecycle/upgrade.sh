@@ -55,7 +55,7 @@ expect 'preflight: neither name is installed and no radiusd runs' \
 expect 'preflight: the published repository offers os-kazuhahub-radius 1.0.0' \
     "[ \"\$(pkg rquery -r kazuhahub '%v' os-kazuhahub-radius)\" = 1.0.0 ]"
 
-# --- the former plugin, as Irvine runs it ---------------------------------------
+# --- the former plugin, as a router runs it -------------------------------------
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$PKI/ca.key" -out "$PKI/ca.pem" -days 3 \
     -subj '/CN=Upgrade Test CA' >/dev/null 2>&1
 openssl req -newkey rsa:2048 -nodes -keyout "$PKI/server.key" -out "$PKI/server.csr" \
