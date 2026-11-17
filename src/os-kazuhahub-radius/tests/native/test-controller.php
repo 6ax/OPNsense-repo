@@ -91,9 +91,12 @@ namespace OPNsense\Core {
         public static array $calls = [];
         public static array $replies = [];
 
-        public function configdRun($command)
+        public static array $detached = [];
+
+        public function configdRun($command, $detach = false)
         {
             self::$calls[] = $command;
+            self::$detached[] = $detach;
             return self::$replies[$command] ?? '';
         }
     }
@@ -205,7 +208,13 @@ namespace {
     check($status['refused'] === ['wan' => 'wan'], 'The refused interfaces are wrong.');
     check($status['conflicts'] === ['os-freeradius is installed.', 'The stock radiusd service is enabled.'], 'The conflicts are wrong.');
     check($status['check'] === ['result' => 'failed', 'message' => "Error: nope\nsecond line", 'checked' => 1790000000], 'The check is wrong.');
-    check(Backend::$calls === ['kazuhahubradius lastcheck'], 'The status asked for more than the last check.');
+    check(Backend::$calls === ['kazuhahubradius lastcheck', 'kazuhahubradius certsyncstate'],
+        'The status asked for more than the last check and the sync state.');
+    check($status['certsync'] === ['result' => 'unknown'], 'A silent sync state was not unknown.');
+    $c = controller('GET');
+    Backend::$replies['kazuhahubradius certsyncstate'] = '{"enabled":true,"result":"unchanged","in_use":"central set","not_after":5}';
+    check($c->statusAction()['certsync'] === ['enabled' => true, 'result' => 'unchanged', 'in_use' => 'central set', 'not_after' => 5],
+        'The sync state was lost.');
     $c = controller('GET');
     ApiMutableServiceControllerBase::$state = 'disabled';
     check($c->statusAction()['status'] === 'disabled', 'A disabled state was lost.');
@@ -240,6 +249,21 @@ namespace {
     $answer = $c->checkAction();
     check($answer['result'] === 'failed' && $answer['conflicts'] === [], 'A failing backend gave no failure.');
 
+    /* The certificate sync fetches and may restart the service: POST only, and refused for read-only accounts. */
+    $c = controller('GET');
+    check($c->certsyncAction()['result'] === 'failed' && Backend::$calls === [], 'GET ran the certificate sync.');
+    $c = controller('POST', true);
+    try {
+        $c->certsyncAction();
+        check(false, 'A read-only account ran the certificate sync.');
+    } catch (RuntimeException $error) {
+        check(Backend::$calls === [], 'A read-only account reached configd through the certificate sync.');
+    }
+    $c = controller();
+    Backend::$detached = [];
+    check($c->certsyncAction() === ['result' => 'started'] && Backend::$calls === ['kazuhahubradius certsyncnow']
+        && Backend::$detached === [true], 'The sync was not started once, detached.');
+
     /* The central server state. */
     $c = controller('GET');
     Backend::$replies['kazuhahubradius homeservers'] = '{"status":"ok","servers":[{"address":"10.0.0.1","port":11812,"state":"alive","outstanding":0}]}';
@@ -266,5 +290,5 @@ namespace {
     ], 'The grid actions changed: ' . json_encode(ApiMutableModelControllerBase::$asked));
     /* The search never lists the secret. */
     check(!in_array('secret', ApiMutableModelControllerBase::$asked[0][2], true), 'The search lists the secret.');
-    echo "Kazuha Hub RADIUS controller checks passed: POST-only mutations, read-only refusal, status merge and grid bindings.\n";
+    echo "Kazuha Hub RADIUS controller checks passed: POST-only mutations, read-only refusal, status merge, certificate sync and grid bindings.\n";
 }

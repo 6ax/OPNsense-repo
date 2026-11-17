@@ -21,6 +21,16 @@
                     <pre id="kzr_check_message" class="hidden" style="margin-top: 0.5em;"></pre>
                 </td>
             </tr>
+            <tr>
+                <td>{{ lang._('Certificates') }}</td>
+                <td>
+                    <span id="kzr_certs"></span>
+                    <button type="button" class="btn btn-xs btn-default" id="kzr_certsync_now">
+                        <i class="fa fa-refresh fa-fw"></i> {{ lang._('Sync now') }}
+                    </button>
+                    <div id="kzr_certsync"></div>
+                </td>
+            </tr>
         </tbody>
     </table>
     <div class="table-responsive">
@@ -103,6 +113,15 @@ $(function () {
         'missing': "{{ lang._('does not exist') }}",
         'invalid': "{{ lang._('is not valid') }}"
     };
+    const syncLabels = {
+        updated: ["{{ lang._('Updated') }}", 'label-success'],
+        reinstalled: ["{{ lang._('Installed again') }}", 'label-success'],
+        unchanged: ["{{ lang._('Unchanged') }}", 'label-success'],
+        failed: ["{{ lang._('Failed') }}", 'label-danger'],
+        skipped: ["{{ lang._('Skipped: no account') }}", 'label-warning'],
+        disabled: ["{{ lang._('Off') }}", 'label-default'],
+        unknown: ["{{ lang._('Not run yet') }}", 'label-default']
+    };
     let timer = null;
     let centrals = [];
 
@@ -150,6 +169,35 @@ $(function () {
         const message = $('#kzr_check_message').addClass('hidden').empty();
         if (check.result === 'failed' && check.message) {
             message.text(htmlDecode(check.message)).removeClass('hidden');
+        }
+        renderCertsync(data.certsync || {});
+    }
+
+    function day(epoch) {
+        return epoch ? new Date(epoch * 1000).toLocaleDateString() : '';
+    }
+
+    function renderCertsync(sync) {
+        const certs = $('#kzr_certs').empty();
+        if (sync.in_use === 'central set') {
+            certs.text("{{ lang._('Central set, valid to') }} " + day(sync.not_after) + ", {{ lang._('authority to') }} " +
+                day(sync.ca_not_after) + ' ');
+        } else {
+            certs.text("{{ lang._('The certificate selected below, from the trust store') }} ");
+        }
+        const detail = $('#kzr_certsync').empty();
+        if (!sync.enabled) {
+            detail.text("{{ lang._('Sync from the central node is off.') }}");
+            return;
+        }
+        const label = syncLabels[sync.result] || syncLabels.unknown;
+        detail.append(document.createTextNode("{{ lang._('Last sync from') }} " + (sync.source || '') + ': '))
+            .append($('<span class="label label-opnsense"/>').addClass(label[1]).text(label[0]));
+        if (sync.checked) {
+            detail.append(document.createTextNode(' ' + new Date(sync.checked * 1000).toLocaleString()));
+        }
+        if ((sync.result === 'failed' || sync.result === 'skipped') && sync.message) {
+            detail.append($('<div/>').text(htmlDecode(sync.message)));
         }
     }
 
@@ -210,6 +258,16 @@ $(function () {
         ajaxCall('/api/kazuhahubradius/service/check', {}, function () {
             button.prop('disabled', false);
             refresh(0);
+        });
+    });
+
+    $('#kzr_certsync_now').click(function () {
+        const button = $(this).prop('disabled', true);
+        ajaxCall('/api/kazuhahubradius/service/certsync', {}, function () {
+            setTimeout(function () {
+                button.prop('disabled', false);
+                refresh(0);
+            }, 5000);
         });
     });
 

@@ -1,6 +1,13 @@
 #!/bin/sh
 set -eu
 
+# Let a certificate sync that is running finish first, so it cannot restart the service or
+# recreate its cache once the package is gone.
+lock=/var/db/kazuhahub-radius/certsync/lock
+if [ -e "$lock" ]; then
+    lockf -k -s -t 300 "$lock" true || true
+fi
+
 # Stop on upgrades as well, so old code never runs against new files.
 service kazuhahub_radiusd onestop >/dev/null 2>&1 || true
 exit 0

@@ -38,7 +38,8 @@ class ConfigdTests(unittest.TestCase):
     def test_the_actions_are_the_documented_set_and_resolve_to_packaged_files(self):
         actions = self.actions()
         self.assertEqual(set(actions.sections()),
-                         {'start', 'stop', 'restart', 'reload', 'status', 'check', 'lastcheck', 'homeservers'})
+                         {'start', 'stop', 'restart', 'reload', 'status', 'check', 'lastcheck', 'homeservers',
+                          'certsync', 'certsyncnow', 'certsyncstate'})
         rc = {'start': 'start', 'stop': 'onestop', 'restart': 'restart', 'reload': 'reload', 'status': 'onestatus'}
         for section in actions.sections():
             with self.subTest(action=section):
@@ -61,6 +62,12 @@ class ConfigdTests(unittest.TestCase):
                          ['/bin/sh', '/usr/local/opnsense/scripts/kazuhahub-radius/check.sh', 'last'])
         self.assertEqual(shlex.split(actions['homeservers']['command']),
                          ['/usr/local/bin/php', '/usr/local/opnsense/scripts/kazuhahub-radius/homeservers.php'])
+        self.assertEqual(shlex.split(actions['certsync']['command']),
+                         ['/usr/local/bin/php', '/usr/local/opnsense/scripts/kazuhahub-radius/certsync.php', 'run'])
+        self.assertEqual(shlex.split(actions['certsyncnow']['command']),
+                         ['/usr/local/bin/php', '/usr/local/opnsense/scripts/kazuhahub-radius/certsync.php', 'run', 'force'])
+        self.assertEqual(shlex.split(actions['certsyncstate']['command']),
+                         ['/usr/local/bin/php', '/usr/local/opnsense/scripts/kazuhahub-radius/certsync.php', 'state'])
         # The certificate export is reachable only through the check and the rc script.
         self.assertNotIn('export_certs', (OPNSENSE / 'service/conf/actions.d/actions_kazuhahubradius.conf').read_text())
 
@@ -78,7 +85,8 @@ class ConfigdTests(unittest.TestCase):
             source = path.read_text()
             calls += re.findall(r'configdp?Run\(\s*\'([^\']+)\'', source)
             calls += re.findall(r'backendJson\(\s*\'([^\']+)\'', source)
-        self.assertEqual(sorted(calls), sorted(['kazuhahubradius lastcheck', 'kazuhahubradius check', 'kazuhahubradius homeservers']))
+        self.assertEqual(sorted(calls), sorted(['kazuhahubradius lastcheck', 'kazuhahubradius check', 'kazuhahubradius homeservers',
+                                                'kazuhahubradius certsyncnow', 'kazuhahubradius certsyncstate']))
         for command in calls:
             group, action = command.split()
             self.assertEqual(group, ROUTE)
@@ -139,7 +147,7 @@ class ServiceTests(unittest.TestCase):
         self.assertIn('conf_dir=/usr/local/etc/kazuhahub-radius', check)
         self.assertIn('run_dir=/var/run/kazuhahub-radius', check)
         self.assertIn('log_dir=/var/log/kazuhahub-radius', check)
-        self.assertIn("KAZUHAHUB_RADIUS_CERT_DIR = '/usr/local/etc/kazuhahub-radius/certs'", export)
+        self.assertIn("define('KAZUHAHUB_RADIUS_CERT_DIR', '/usr/local/etc/kazuhahub-radius/certs');", export)
         self.assertIn("KAZUHAHUB_RADIUS_SOCKET = '/var/run/kazuhahub-radius/radiusd.sock'", homeservers)
         eap = (TEMPLATES / 'mods/eap').read_text()
         self.assertIn('certdir = ${confdir}/certs', (TEMPLATES / 'radiusd.conf').read_text())
@@ -177,6 +185,42 @@ class ServiceTests(unittest.TestCase):
         self.assertIn('${logdir}/radius.log', (TEMPLATES / 'radiusd.conf').read_text())
 
 
+class CertSyncTests(unittest.TestCase):
+    def test_the_sync_is_scheduled_every_six_hours_through_its_configd_action(self):
+        inc = read('usr/local/etc/inc/plugins.inc.d/kazuhahubradius.inc')
+        self.assertIn("function kazuhahubradius_cron()", inc)
+        self.assertIn("['/usr/local/sbin/configctl -d kazuhahubradius certsync', '23', '*/6']", inc)
+
+    def test_the_sync_only_fetches_and_never_listens(self):
+        sync = (SCRIPTS / 'certsync.php').read_text()
+        for word in ['stream_socket_server', 'socket_listen', 'socket_bind', 'listen =', 'CURLPROTO_HTTPS']:
+            self.assertNotIn(word, sync)
+        self.assertIn('CURLOPT_PROTOCOLS => CURLPROTO_HTTP,', sync)
+        self.assertIn('CURLOPT_FOLLOWLOCATION => false', sync)
+        self.assertIn("CURLOPT_NOPROXY => '*'", sync)
+        self.assertIn("const KAZUHAHUB_RADIUS_SYNC_NAME = 'radius.kazuha.org';", sync)
+        self.assertIn("define('KAZUHAHUB_RADIUS_SYNC_DIR', '/var/db/kazuhahub-radius/certsync');", sync)
+        # The exporter prefers the synced set and the sync restarts through the rc script after the check.
+        export = (SCRIPTS / 'export_certs.php').read_text()
+        self.assertIn("require_once __DIR__ . '/certsync.php';", export)
+        self.assertIn("const KAZUHAHUB_RADIUS_SYNC_RC = '/usr/local/etc/rc.d/kazuhahub_radiusd';", sync)
+        self.assertIn("const KAZUHAHUB_RADIUS_SYNC_CHECK = '/usr/local/opnsense/scripts/kazuhahub-radius/check.sh';", sync)
+
+    def test_the_sync_defaults_to_on_against_the_production_node(self):
+        model = ET.parse(MODELS / 'General.xml').getroot().find('items')
+        self.assertEqual(model.find('cert_sync').get('type'), 'BooleanField')
+        self.assertEqual(model.find('cert_sync/Default').text, '1')
+        self.assertEqual(model.find('cert_sync_host/Default').text, '100.88.32.2')
+        self.assertEqual(model.find('cert_sync_port/Default').text, '11880')
+        # The account has no default: nothing is pulled until it is typed.
+        self.assertIsNone(model.find('cert_sync_user/Default'))
+        self.assertEqual(model.find('cert_sync_password').get('type'), 'UpdateOnlyTextField')
+        self.assertIsNone(model.find('cert_sync_password/Default'))
+        sync = (SCRIPTS / 'certsync.php').read_text()
+        self.assertIn('CURLOPT_HTTPAUTH => CURLAUTH_BASIC,', sync)
+        self.assertEqual(ET.parse(MODELS / 'General.xml').getroot().find('version').text, '1.1.0')
+
+
 class RouteTests(unittest.TestCase):
     def test_menu_acl_and_pages_agree(self):
         menu = ET.parse(MODELS / 'Menu/Menu.xml').getroot()
@@ -204,7 +248,7 @@ class RouteTests(unittest.TestCase):
         self.assertIn("'id': 'DialogCentral'", volt)
         for action in ['get', 'set']:
             self.assertIn('/api/kazuhahubradius/settings/%s' % action, volt)
-        for action in ['status', 'homeservers', 'check', 'reconfigure']:
+        for action in ['status', 'homeservers', 'check', 'certsync', 'reconfigure']:
             self.assertIn('/api/kazuhahubradius/service/%s' % action, volt)
 
     def test_forms_match_the_model_fields(self):
@@ -250,17 +294,17 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual({key: version[key] for key in ('product_id', 'product_name', 'product_abi', 'product_arch',
                                                         'product_version', 'product_tier')},
                          {'product_id': 'os-kazuhahub-radius', 'product_name': 'kazuhahub-radius', 'product_abi': '26.7',
-                          'product_arch': 'amd64', 'product_version': '1.0.0', 'product_tier': '4'})
+                          'product_arch': 'amd64', 'product_version': '1.1.0', 'product_tier': '4'})
         self.assertEqual(version['product_email'], 'https://github.com/KazuhaHub/')
         self.assertEqual(version['product_website'], 'https://github.com/KazuhaHub/OPNsense-repo')
         build = (PACKAGE / 'build.sh').read_text()
-        self.assertIn('VERSION="${VERSION:-1.0.0}"', build)
+        self.assertIn('VERSION="${VERSION:-1.1.0}"', build)
         self.assertIn('PKG_NAME="${PKG_NAME:-os-kazuhahub-radius}"', build)
         self.assertIn('MAINTAINER="${MAINTAINER:-https://github.com/KazuhaHub/}"', build)
         self.assertIn('ORIGIN="${ORIGIN:-opnsense/os-kazuhahub-radius}"', build)
-        self.assertIn('VERSION?=\t1.0.0', (PACKAGE / 'Makefile').read_text())
+        self.assertIn('VERSION?=\t1.1.0', (PACKAGE / 'Makefile').read_text())
         record = json.loads((REPOSITORY / 'packaging/plugins.json').read_text())['plugins']['os-kazuhahub-radius']
-        self.assertEqual(record['version'], '1.0.0')
+        self.assertEqual(record['version'], '1.1.0')
         self.assertEqual(record['abi'], 'independent')
         self.assertEqual(record['staging'], 'tree')
         self.assertEqual(record['stage'], {'src': '/'})

@@ -1,7 +1,7 @@
 <model>
     <mount>//OPNsense/kazuhahubradius/general</mount>
     <description>Kazuha Hub RADIUS proxy</description>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <items>
         <enabled type="BooleanField">
             <Default>0</Default>
@@ -40,6 +40,31 @@
             <Mask>/^[A-Za-z0-9!#&amp;()*+,.\/:;&lt;=&gt;?@^_{}|~\[\]-]{8,128}$/D</Mask>
             <ValidationMessage>Use 8 to 128 characters: letters, digits and ! # &amp; ( ) * + , - . / : ; &lt; = &gt; ? @ [ ] ^ _ { | } ~</ValidationMessage>
         </client_secret>
+        <cert_sync type="BooleanField">
+            <Default>1</Default>
+            <Required>Y</Required>
+        </cert_sync>
+        <cert_sync_host type="HostnameField">
+            <Default>100.88.32.2</Default>
+            <Required>Y</Required>
+            <IpAllowed>Y</IpAllowed>
+            <ValidationMessage>Enter the IP address or host name of the central certificate source.</ValidationMessage>
+        </cert_sync_host>
+        <cert_sync_port type="IntegerField">
+            <Default>11880</Default>
+            <Required>Y</Required>
+            <MinimumValue>1</MinimumValue>
+            <MaximumValue>65535</MaximumValue>
+            <ValidationMessage>Enter a port between 1 and 65535.</ValidationMessage>
+        </cert_sync_port>
+        <cert_sync_user type="TextField">
+            <Mask>/^[A-Za-z0-9._@-]{1,64}$/D</Mask>
+            <ValidationMessage>Use 1 to 64 letters, digits and . _ @ -</ValidationMessage>
+        </cert_sync_user>
+        <cert_sync_password type="UpdateOnlyTextField">
+            <Mask>/^[\x21-\x7e]{1,256}$/D</Mask>
+            <ValidationMessage>Use 1 to 256 printable characters without spaces.</ValidationMessage>
+        </cert_sync_password>
         <centrals>
             <central type="ArrayField">
                 <enabled type="BooleanField">

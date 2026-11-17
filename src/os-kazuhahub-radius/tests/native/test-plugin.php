@@ -38,4 +38,9 @@ check(kazuhahubradius_services() === [[
     'name' => 'kazuhahub_radiusd',
     'pidfile' => '/var/run/kazuhahub-radius/radiusd.pid',
 ]], 'The registration changed.');
-echo "Kazuha Hub RADIUS plugin registration passed: enabled only, rc and configd names.\n";
+/* The certificate sync is scheduled whatever the settings; the run itself does nothing while they are off. */
+foreach ([null, ['enabled' => '0'], ['enabled' => '1']] as $setting) {
+    check(kazuhahubradius_cron() === [['autocron' => ['/usr/local/sbin/configctl -d kazuhahubradius certsync', '23', '*/6']]],
+        'The certificate sync schedule changed.');
+}
+echo "Kazuha Hub RADIUS plugin registration passed: enabled only, rc and configd names, the 6-hourly sync.\n";

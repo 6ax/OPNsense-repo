@@ -2,7 +2,7 @@
 set -eu
 
 PKG_NAME="${PKG_NAME:-os-kazuhahub-radius}"
-VERSION="${VERSION:-1.0.0}"
+VERSION="${VERSION:-1.1.0}"
 ORIGIN="${ORIGIN:-opnsense/os-kazuhahub-radius}"
 COMMENT="${COMMENT:-Kazuha Hub RADIUS proxy: EAP-TTLS Wi-Fi authentication forwarded to central servers}"
 MAINTAINER="${MAINTAINER:-https://github.com/KazuhaHub/}"
@@ -45,6 +45,7 @@ need_file "src/usr/local/opnsense/mvc/app/models/OPNsense/KazuhaHubRadius/Migrat
 need_file "src/usr/local/opnsense/mvc/app/models/OPNsense/KazuhaHubRadius/Menu/Menu.xml"
 need_file "src/usr/local/opnsense/mvc/app/models/OPNsense/KazuhaHubRadius/ACL/ACL.xml"
 need_file "src/usr/local/opnsense/mvc/app/views/OPNsense/KazuhaHubRadius/index.volt"
+need_file "src/usr/local/opnsense/scripts/kazuhahub-radius/certsync.php"
 need_file "src/usr/local/opnsense/scripts/kazuhahub-radius/check.sh"
 need_file "src/usr/local/opnsense/scripts/kazuhahub-radius/export_certs.php"
 need_file "src/usr/local/opnsense/scripts/kazuhahub-radius/homeservers.php"

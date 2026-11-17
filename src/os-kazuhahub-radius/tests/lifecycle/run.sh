@@ -345,6 +345,153 @@ expect 'the log records the accept and the reject' \
 expect 'a reload keeps the service serving' \
     "[ \"\$(configctl kazuhahubradius reload)\" = OK ] && sleep 1 && run_eapol '$W/accept.conf' && grep -q '^SUCCESS' '$W/eapol.out'"
 
+# --- certificate sync from a fake central node ---------------------------------
+# A throwaway "central" PKI served over plain HTTP on a loopback alias, as the real node serves its
+# set on the tailnet. The sync must install it, restart the service on it, ignore every bad set
+# while the service keeps running, and fall back to the trust store when it is switched off.
+expect 'the certificate sync is scheduled every 6 hours in the crontab' \
+    "grep -q 'configctl -d kazuhahubradius certsync' /var/cron/tabs/root"
+CPKI="$W/central-pki"
+DIST="$W/dist"
+mkdir -p "$CPKI" "$DIST"
+openssl req -x509 -newkey rsa:2048 -nodes -keyout "$CPKI/ca.key" -out "$CPKI/ca.pem" -days 3 \
+    -subj '/O=Lifecycle/CN=Lifecycle Central CA' \
+    -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign >/dev/null 2>&1
+central_leaf() {
+    printf 'subjectAltName=%s\nextendedKeyUsage=serverAuth\n' "$2" > "$CPKI/$1.ext"
+    openssl req -newkey "rsa:${3:-2048}" -nodes -keyout "$CPKI/$1.key" -out "$CPKI/$1.csr" -subj '/CN=radius.kazuha.org' >/dev/null 2>&1
+    openssl x509 -req -in "$CPKI/$1.csr" -CA "$CPKI/ca.pem" -CAkey "$CPKI/ca.key" -CAcreateserial \
+        -out "$CPKI/$1.pem" -days 3 -extfile "$CPKI/$1.ext" >/dev/null 2>&1
+}
+central_leaf good 'DNS:radius.kazuha.org'
+central_leaf renewed 'DNS:radius.kazuha.org'
+# Passes every check of the sync, but radiusd refuses a key this small: the rollback case.
+central_leaf weak 'DNS:radius.kazuha.org' 512
+central_leaf wrongname 'DNS:radius.example.invalid'
+# publish LEAF [corrupt]: the set the fake central node serves, with sums as sha256sum writes them.
+publish() {
+    cp "$CPKI/$1.pem" "$DIST/server.pem"; cp "$CPKI/$1.key" "$DIST/server.key"; cp "$CPKI/ca.pem" "$DIST/ca.pem"
+    : > "$DIST/SHA256SUMS"
+    for f in server.pem server.key ca.pem; do printf '%s  %s\n' "$(sha256 -q "$DIST/$f")" "$f" >> "$DIST/SHA256SUMS"; done
+    [ "${2:-}" = corrupt ] && printf '\n' >> "$DIST/server.key"
+    return 0
+}
+publish good
+# One Basic account, as the real node has one per site; generated here and never printed.
+printf 'lifecycle-site\n' > "$SECRETS/sync-user"
+openssl rand -hex 16 > "$SECRETS/sync-password"
+cat > "$W/node.php" <<'NODEEOF'
+<?php
+$secrets = getenv('NODE_SECRETS');
+if (($_SERVER['PHP_AUTH_USER'] ?? '') !== trim(file_get_contents("$secrets/sync-user"))
+    || ($_SERVER['PHP_AUTH_PW'] ?? '') !== trim(file_get_contents("$secrets/sync-password"))) {
+    header('WWW-Authenticate: Basic realm="certs"', true, 401);
+    return true;
+}
+$name = ltrim(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), '/');
+if (!in_array($name, ['SHA256SUMS', 'server.pem', 'server.key', 'ca.pem'], true)) {
+    http_response_code(404);
+    return true;
+}
+readfile(getenv('NODE_DIST') . '/' . $name);
+return true;
+NODEEOF
+start_node() {
+    NODE_SECRETS="$SECRETS" NODE_DIST="$DIST" php -S 127.0.0.4:11880 "$W/node.php" >/dev/null 2>&1 &
+    SOURCE_PID=$!
+    sleep 1
+}
+ifconfig lo0 alias 127.0.0.4/32
+start_node
+refuse 'the model refuses a source host that is not a host name or address' \
+    "php '$W/seed.php' certsync 'not a host!' 11880 on"
+refuse 'the model refuses a source port out of range' "php '$W/seed.php' certsync 127.0.0.4 70000 on"
+expect 'the sync source is saved through the model, without an account first' "php '$W/seed.php' certsync 127.0.0.4 11880 on | grep -q '\"saved\"'"
+radius_pid() { cat /var/run/kazuhahub-radius/radiusd.pid 2>/dev/null; }
+PID_BEFORE="$(radius_pid)"
+configctl kazuhahubradius certsync > "$W/sync0.json"
+expect 'without an account nothing is pulled and the service is left alone' \
+    "grep -q '\"run\":\"skipped\"' '$W/sync0.json' && [ ! -d /var/db/kazuhahub-radius/certsync/current ] && [ \"\$(radius_pid)\" = '$PID_BEFORE' ]"
+cp "$SECRETS/sync-password" "$SECRETS/sync-password.real"
+openssl rand -hex 16 > "$SECRETS/sync-password"
+php "$W/seed.php" certsync 127.0.0.4 11880 on "$SECRETS" >/dev/null
+mv "$SECRETS/sync-password.real" "$SECRETS/sync-password"
+configctl kazuhahubradius certsync > "$W/sync01.json"
+expect 'a refused account (HTTP 401) keeps the current set' \
+    "grep -q 'HTTP 401' '$W/sync01.json' && [ ! -d /var/db/kazuhahub-radius/certsync/current ] && [ \"\$(radius_pid)\" = '$PID_BEFORE' ]"
+expect 'the account is saved through the model' "php '$W/seed.php' certsync 127.0.0.4 11880 on '$SECRETS' | grep -q '\"saved\"'"
+configctl kazuhahubradius certsync > "$W/sync1.json"
+sleep 2
+expect 'the first sync installs the central set' \
+    "grep -q '\"result\":\"updated\"' '$W/sync1.json' && grep -q '\"in_use\":\"central set\"' '$W/sync1.json'"
+expect 'the service was restarted on it and runs' \
+    "[ -n \"\$(radius_pid)\" ] && [ \"\$(radius_pid)\" != '$PID_BEFORE' ] && configctl kazuhahubradius status | grep -q 'is running'"
+expect 'the daemon reads the central certificate and authority' \
+    "openssl x509 -in $CONF/certs/server.pem -noout -issuer | grep -q 'Lifecycle Central CA' && cmp -s $CONF/certs/ca.pem '$CPKI/ca.pem'"
+expect 'the cache is private: 0700 directories, 0600 files' \
+    "[ \"\$(stat -f '%Lp' /var/db/kazuhahub-radius/certsync)\" = 700 ] && [ \"\$(stat -f '%Lp' /var/db/kazuhahub-radius/certsync/current)\" = 700 ] && [ -z \"\$(find /var/db/kazuhahub-radius -type f ! -perm 0600)\" ]"
+cp "$W/accept.conf" "$W/accept-central.conf"
+sed -i '' "s#ca_cert=\"$PKI/ca.pem\"#ca_cert=\"$CPKI/ca.pem\"#" "$W/accept-central.conf"
+expect 'EAP-TTLS succeeds against the central authority' \
+    "run_eapol '$W/accept-central.conf' && grep -q '^SUCCESS' '$W/eapol.out'"
+expect 'a client that trusts only the old authority now refuses the server' \
+    "! run_eapol '$W/accept.conf' 10"
+PID_SYNCED="$(radius_pid)"
+CERT_SYNCED="$(sha256 -q $CONF/certs/server.pem)"
+configctl kazuhahubradius certsync > "$W/sync2.json"
+expect 'an unchanged set is left alone and the service is not restarted' \
+    "grep -q '\"result\":\"unchanged\"' '$W/sync2.json' && [ \"\$(radius_pid)\" = '$PID_SYNCED' ]"
+publish wrongname
+configctl kazuhahubradius certsync > "$W/sync3.json"
+expect 'a set for another name is refused and the service keeps running on the current one' \
+    "grep -q '\"result\":\"failed\"' '$W/sync3.json' && grep -q 'radius.kazuha.org' '$W/sync3.json' && [ \"\$(radius_pid)\" = '$PID_SYNCED' ] && [ \"\$(sha256 -q $CONF/certs/server.pem)\" = '$CERT_SYNCED' ]"
+# A renewed set whose key was changed after the sums were written.
+publish renewed corrupt
+configctl kazuhahubradius certsync > "$W/sync4.json"
+expect 'a file that does not match its sum is refused' \
+    "grep -q 'does not match SHA256SUMS' '$W/sync4.json' && [ \"\$(radius_pid)\" = '$PID_SYNCED' ]"
+# A set radiusd cannot load: rolled back, the running daemon untouched, the previous files back.
+publish weak
+configctl kazuhahubradius certsync > "$W/sync45.json"
+expect 'a set radiusd refuses is rolled back without restarting the service' \
+    "grep -q 'rolled back: the configuration check failed' '$W/sync45.json' && [ \"\$(radius_pid)\" = '$PID_SYNCED' ] && [ \"\$(sha256 -q $CONF/certs/server.pem)\" = '$CERT_SYNCED' ] && run_eapol '$W/accept-central.conf' && grep -q '^SUCCESS' '$W/eapol.out'"
+configctl kazuhahubradius certsync > "$W/sync46.json"
+expect 'the rolled-back set is not tried again at once' "grep -q 'less than a day' '$W/sync46.json' && [ \"\$(radius_pid)\" = '$PID_SYNCED' ]"
+expect 'the configuration check is OK again after the rollback' "configctl kazuhahubradius lastcheck | grep -q '\"result\":\"ok\"'"
+kill "$SOURCE_PID" 2>/dev/null
+wait "$SOURCE_PID" 2>/dev/null
+configctl kazuhahubradius certsync > "$W/sync5.json"
+expect 'an unreachable central node keeps the current set' \
+    "grep -q 'did not answer' '$W/sync5.json' && [ \"\$(radius_pid)\" = '$PID_SYNCED' ] && run_eapol '$W/accept-central.conf' && grep -q '^SUCCESS' '$W/eapol.out'"
+expect 'every refusal was logged, without key material or the password' \
+    "[ \"\$(grep -c 'kazuhahub-radius.*cert-sync:' /var/log/system/latest.log)\" -ge 6 ] && ! grep 'cert-sync:' /var/log/system/latest.log | grep -q -F -e 'BEGIN' -e 'PRIVATE' -e \"\$(cat '$SECRETS/sync-password')\""
+expect 'the sync output carries no key material and no password' "! grep -q -F -e 'BEGIN' -e 'PRIVATE' -e \"\$(cat '$SECRETS/sync-password')\" '$W'/sync*.json"
+sockstat -4 -l | awk -v pid="$(radius_pid)" '$3 == pid {print $6}' | sort > "$W/sockets-synced.txt"
+expect 'the sync opened nothing new: the same three sockets' \
+    "[ \"\$(wc -l < '$W/sockets-synced.txt' | tr -d ' ')\" = 3 ] && grep -q '^10\\.0\\.0\\.1:1812\$' '$W/sockets-synced.txt' && ! sockstat -4 -l | grep -q ':11880 '"
+php "$W/seed.php" status > "$W/status-synced.json"
+expect 'the service controller never hands the sync password out' "! grep -q -F \"\$(cat '$SECRETS/sync-password')\" '$W/status-synced.json'"
+expect 'the service controller reports the central set in use' \
+    "grep -q '\"in_use\":\"central set\"' '$W/status-synced.json' && grep -q '127.0.0.4:11880' '$W/status-synced.json'"
+expect 'with the sync off the restart falls back to the trust store' \
+    "php '$W/seed.php' certsync 127.0.0.4 11880 off | grep -q '\"saved\"' && [ \"\$(configctl kazuhahubradius restart)\" = OK ] && sleep 2 && openssl x509 -in $CONF/certs/server.pem -noout -issuer | grep -q 'Lifecycle Test CA' && run_eapol '$W/accept.conf' && grep -q '^SUCCESS' '$W/eapol.out'"
+expect 'a sync that is off does nothing' \
+    "configctl kazuhahubradius certsync | grep -q '\"enabled\":false'"
+# Back on, with the daemon still on the trust store set: the next run notices and installs the accepted set again.
+start_node
+publish good
+php "$W/seed.php" certsync 127.0.0.4 11880 on >/dev/null
+configctl kazuhahubradius certsync > "$W/sync6.json"
+sleep 2
+expect 'a daemon left on the trust store set gets the accepted central set again' \
+    "grep -q '\"run\":\"reinstalled\"' '$W/sync6.json' && openssl x509 -in $CONF/certs/server.pem -noout -issuer | grep -q 'Lifecycle Central CA' && run_eapol '$W/accept-central.conf' && grep -q '^SUCCESS' '$W/eapol.out'"
+kill "$SOURCE_PID" 2>/dev/null
+wait "$SOURCE_PID" 2>/dev/null
+php "$W/seed.php" certsync 127.0.0.4 11880 off >/dev/null
+configctl kazuhahubradius restart >/dev/null
+sleep 2
+ifconfig lo0 -alias 127.0.0.4
+
 # --- fail-over -----------------------------------------------------------------
 kill "$(cat "$W/central1/run/radiusd.pid")"
 sleep 1
@@ -373,7 +520,8 @@ kill "$(cat "$W/central2/run/radiusd.pid")" 2>/dev/null
 pkg delete -y os-kazuhahub-radius > "$W/deinstall.out" 2>&1
 expect 'deinstall removes the package' '! pkg info -e os-kazuhahub-radius'
 expect 'deinstall leaves nothing running' '! pgrep -x radiusd'
-for path in $CONF /var/run/kazuhahub-radius /var/log/kazuhahub-radius /etc/rc.conf.d/kazuhahub_radiusd \
+expect 'deinstall drops the certificate sync from the crontab' "! grep -q 'kazuhahubradius certsync' /var/cron/tabs/root"
+for path in $CONF /var/db/kazuhahub-radius /var/run/kazuhahub-radius /var/log/kazuhahub-radius /etc/rc.conf.d/kazuhahub_radiusd \
         /usr/local/etc/rc.d/kazuhahub_radiusd /usr/local/opnsense/scripts/kazuhahub-radius \
         /usr/local/opnsense/service/templates/OPNsense/KazuhaHubRadius /usr/local/opnsense/mvc/app/models/OPNsense/KazuhaHubRadius; do
     expect "deinstall removed $path" "[ ! -e '$path' ]"
@@ -387,6 +535,7 @@ expect 'freeradius3 is still installed after the plugin is gone' 'pkg info -e fr
 pkill -f "radiusd -d $W/central" 2>/dev/null
 ifconfig lo0 -alias 127.0.0.2
 ifconfig lo0 -alias 127.0.0.3
+ifconfig lo0 -alias 127.0.0.4 2>/dev/null
 cp "$W/config.xml.orig" /conf/config.xml
 ls /conf/backup > "$W/backups.now" 2>/dev/null || : > "$W/backups.now"
 for name in $(comm -13 "$W/backups.orig" "$W/backups.now"); do rm -f "/conf/backup/$name"; done
@@ -408,7 +557,7 @@ pkg query -a '%n' | sort > "$W/packages.now"
 expect 'the installed packages are as they were' "cmp -s '$W/packages.orig' '$W/packages.now'"
 expect 'the freeradius user and group are gone again' \
     "[ '$USER_PRESENT' = 1 ] || { ! id freeradius && ! getent group freeradius; }"
-expect 'the loopback aliases are gone' '! ifconfig lo0 | grep -q -E "127\.0\.0\.[23] "'
+expect 'the loopback aliases are gone' '! ifconfig lo0 | grep -q -E "127\.0\.0\.[234] "'
 service configd restart >/dev/null 2>&1
 
 # --- report --------------------------------------------------------------------

@@ -151,7 +151,9 @@ class HookTests(unittest.TestCase):
             ['kazuhahub.sh', 'mirror'],
             ['service', 'configd', 'restart'],
             ['run_migrations.php', 'OPNsense/KazuhaHubRadius'],
-            ['configctl', 'template', 'reload', 'OPNsense/KazuhaHubRadius']])
+            ['configctl', 'template', 'reload', 'OPNsense/KazuhaHubRadius'],
+            ['configctl', 'cron', 'restart'],
+            ['configctl', '-d', 'kazuhahubradius', 'certsync']])
         self.assertEqual((self.root / 'usr/local/etc/kazuhahub-radius').stat().st_mode & 0o777, 0o750)
         self.assertFalse(any(path.exists() for path in caches))
         self.assertEqual((self.root / 'usr/local/etc/rc.d/kazuhahub_radiusd').stat().st_mode & 0o777, 0o755)
@@ -183,7 +185,9 @@ class HookTests(unittest.TestCase):
     def test_an_enabled_reinstall_or_upgrade_restarts_the_service(self):
         result = self.run_hook('+POST_INSTALL', HOOK_ENABLE='YES')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.calls()[-1], ['service', 'kazuhahub_radiusd', 'restart'])
+        # The service restarts on the new code first; the certificate sync is scheduled and started detached after it.
+        self.assertEqual(self.calls()[-3:], [['service', 'kazuhahub_radiusd', 'restart'], ['configctl', 'cron', 'restart'],
+                                             ['configctl', '-d', 'kazuhahubradius', 'certsync']])
 
     def test_install_survives_failing_helpers_with_warnings(self):
         for failing in ['configctl', 'service', 'run_migrations.php']:
@@ -222,6 +226,7 @@ class HookTests(unittest.TestCase):
                    self.put('usr/local/etc/kazuhahub-radius/certs/server.key'), self.put('usr/local/etc/kazuhahub-radius/certs/server.pem'),
                    self.put('var/run/kazuhahub-radius/radiusd.pid'), self.put('var/run/kazuhahub-radius/check.result'),
                    self.put('var/log/kazuhahub-radius/radius.log'),
+                   self.put('var/db/kazuhahub-radius/certsync/current/server.key'),
                    self.put('var/lib/php/tmp/opnsense_menu_cache.xml')]
         kept = [self.put('conf/config.xml', '<kazuhahubradius>kept</kazuhahubradius>'),
                 self.put('usr/local/etc/raddb/radiusd.conf', 'stock'), self.put('etc/rc.conf.d/radiusd', 'radiusd_enable="YES"\n'),
@@ -229,12 +234,14 @@ class HookTests(unittest.TestCase):
         result = self.run_hook('+POST_DEINSTALL')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any(path.exists() for path in removed))
-        for directory in ['usr/local/etc/kazuhahub-radius', 'var/run/kazuhahub-radius', 'var/log/kazuhahub-radius']:
+        for directory in ['usr/local/etc/kazuhahub-radius', 'var/db/kazuhahub-radius', 'var/run/kazuhahub-radius',
+                          'var/log/kazuhahub-radius']:
             self.assertFalse((self.root / directory).exists(), directory)
         self.assertTrue(all(path.exists() for path in kept))
         self.assertEqual(kept[0].read_text(), '<kazuhahubradius>kept</kazuhahubradius>')
         self.assertEqual(kept[1].read_text(), 'stock')
-        self.assertEqual(self.calls(), [['register.php', 'remove', 'os-kazuhahub-radius'], ['service', 'configd', 'restart']])
+        self.assertEqual(self.calls(), [['register.php', 'remove', 'os-kazuhahub-radius'], ['service', 'configd', 'restart'],
+                                        ['configctl', 'cron', 'restart']])
 
     def test_removal_survives_failing_helpers(self):
         for failing in ['register.php', 'service']:

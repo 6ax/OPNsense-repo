@@ -35,3 +35,13 @@ function kazuhahubradius_services()
 
     return $services;
 }
+
+/* The certificate sync runs every 6 hours; it does nothing while the service or the sync is off. */
+function kazuhahubradius_cron()
+{
+    $jobs = [];
+
+    $jobs[]['autocron'] = ['/usr/local/sbin/configctl -d kazuhahubradius certsync', '23', '*/6'];
+
+    return $jobs;
+}

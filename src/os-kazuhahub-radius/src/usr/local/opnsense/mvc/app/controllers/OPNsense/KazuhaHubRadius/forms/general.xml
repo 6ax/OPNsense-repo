@@ -37,4 +37,33 @@
         <type>password</type>
         <help>The RADIUS shared secret configured on the access points. It is never shown again; leave the field empty to keep the stored one.</help>
     </field>
+    <field>
+        <id>general.cert_sync</id>
+        <label>Sync certificates from the central node</label>
+        <type>checkbox</type>
+        <help>Every 6 hours, fetch the server certificate, its key and the authority from the central node, and use them when they changed and pass every check: the sums match, the certificate chains to the authority, is valid now, names radius.kazuha.org and matches the key. The service is then restarted. On any failure the current set stays in use. The certificate selected above is used until a central set has been accepted, and whenever none is valid. Only outbound requests are made; nothing new listens.</help>
+    </field>
+    <field>
+        <id>general.cert_sync_host</id>
+        <label>Certificate source host</label>
+        <type>text</type>
+        <help>The central node that serves the set over plain HTTP on the tailnet, where WireGuard authenticates this firewall's address.</help>
+    </field>
+    <field>
+        <id>general.cert_sync_port</id>
+        <label>Certificate source port</label>
+        <type>text</type>
+    </field>
+    <field>
+        <id>general.cert_sync_user</id>
+        <label>Certificate source user</label>
+        <type>text</type>
+        <help>The account of this site on the central node, sent with HTTP Basic authentication. While the user or the password is empty, no pull is made and the sync logs that.</help>
+    </field>
+    <field>
+        <id>general.cert_sync_password</id>
+        <label>Certificate source password</label>
+        <type>password</type>
+        <help>It is never shown again; leave the field empty to keep the stored one.</help>
+    </field>
 </form>

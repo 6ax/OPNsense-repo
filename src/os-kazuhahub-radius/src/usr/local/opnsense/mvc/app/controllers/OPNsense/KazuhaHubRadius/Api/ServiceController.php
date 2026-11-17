@@ -69,7 +69,19 @@ class ServiceController extends ApiMutableServiceControllerBase
             'message' => is_string($last['message'] ?? null) ? $last['message'] : '',
             'checked' => is_numeric($last['checked'] ?? null) ? (int)$last['checked'] : 0,
         ];
+        $status['certsync'] = $this->backendJson('kazuhahubradius certsyncstate') ?? ['result' => 'unknown'];
         return $status;
+    }
+
+    /* Start a sync of the central certificate set now, the way the 6-hourly run does. It runs
+       detached, since fetching, checking and restarting can outlast a request; the status shows the result. */
+    public function certsyncAction()
+    {
+        if (!$this->mutation()) {
+            return ['result' => 'failed', 'message' => gettext('POST required')];
+        }
+        (new Backend())->configdRun('kazuhahubradius certsyncnow', true);
+        return ['result' => 'started'];
     }
 
     /* Export the certificates and check the generated configuration the way a start would. */

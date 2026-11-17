@@ -30,6 +30,7 @@ PORTABLE_PHP = {
     'os-kazuhahub-radius': [('src/os-kazuhahub-radius/tests/native/test-listen.php',),
                             ('src/os-kazuhahub-radius/tests/native/test-controller.php',),
                             ('src/os-kazuhahub-radius/tests/native/test-certs.php',),
+                            ('src/os-kazuhahub-radius/tests/native/test-certsync.php',),
                             ('src/os-kazuhahub-radius/tests/native/test-homeservers.php',),
                             ('src/os-kazuhahub-radius/tests/native/test-plugin.php',)],
 }

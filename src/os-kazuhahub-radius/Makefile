@@ -1,5 +1,5 @@
 PKG_NAME?=	os-kazuhahub-radius
-VERSION?=	1.0.0
+VERSION?=	1.1.0
 TARGET_ABI?=	FreeBSD:*:amd64
 
 .PHONY: package install clean

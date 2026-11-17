@@ -7,7 +7,7 @@
 
 | | |
 | --- | --- |
-| 插件版本 | `1.0.0` |
+| 插件版本 | `1.1.0` |
 | 目标 | OPNsense 26.7，`FreeBSD:15:amd64` |
 | 依赖 | 仅 FreeBSD 包 `freeradius3`（`net/freeradius3`，26.7 自带 3.2.10） |
 | 菜单 | **服务 > Kazuha Hub RADIUS > Settings** |
@@ -40,11 +40,40 @@
 | Access point networks | LAN 子网 | 接入点所在的 IPv4 网络（Irvine 是 `192.168.0.0/22`），每个网络生成一个客户端。 |
 | Access point secret | 空 | 接入点与本服务共用的密钥串。 |
 | Central servers | Production `100.88.32.2:11812`，4c6g `100.88.33.1:11812`（默认禁用，无密钥串） | 地址、端口、密钥串、顺序；序号小的优先。 |
+| Sync certificates from the central node | 开 | 见下节。 |
+| Certificate source host / port | `100.88.32.2` / `11880` | 在 tailnet 上分发证书集的中心节点。 |
+| Certificate source user / password | 空 | 本站点在中心节点上的 HTTP Basic 账号；密码像其他密钥串一样保存、从不回显。任一为空时不拉取。 |
 
 **密钥串从不回显。** 它们像 OPNsense 的其他密钥一样保存在 `config.xml`，API 永远不返回
 它们；表单留空表示保留已存的值。它们只出现在 0640 的生成文件里，不进入日志、
 configd 输出、状态页或测试输出。密钥串长 8 到 128 个字符，只允许字母、数字和
 `! # & ( ) * + , - . / : ; < = > ? @ [ ] ^ _ { | } ~`。
+
+## 证书同步
+
+续期和换 CA 只在中心节点上做。插件每 6 小时（cron 调用 configd 动作
+`kazuhahubradius certsync`；安装时和页面上的 **Sync now** 也会触发）从
+`http://<host>:<port>/` 拉取 `SHA256SUMS`，使用本站点的 HTTP Basic 账号（没有账号就不拉取并记日志；
+401 与其他失败一样处理）。只有它与已接受的证书集不同时，才拉取
+`server.pem`、`server.key` 和 `ca.pem`，并且以下各项全部通过才接受：
+
+- 每个文件都与 `SHA256SUMS` 中对应的行一致，且 `SHA256SUMS` 恰好列出这三个文件；
+- 证书能链到拉取到的 `ca.pem`（`openssl verify`）；
+- 证书和 CA 当前都在有效期内；
+- subjectAltName 含 `DNS:radius.kazuha.org`；
+- 私钥与证书匹配。
+
+接受后，证书集保存在 `/var/db/kazuhahub-radius/certsync/current`（目录 0700，文件 0600），
+导出脚本把它写到 radiusd 读取证书的位置，用 `radiusd -XC` 检查配置，然后只重启本服务
+（仅当它原本在运行）。任何失败（中心节点不可达、403、校验和不符、配置检查失败）都会让服务
+继续使用现有证书集，并以 `kazuhahub-radius: cert-sync: ...` 写入系统日志；新证书集若没通过
+配置检查或重启失败，会回滚、放回之前的文件，若重启把服务停掉了还会把它重新拉起；这套证书一天内
+不再尝试，除非点 **Sync now**。如果发现守护进程用的不是已接受的证书集（例如启动时退回了信任库，
+或上一轮中途被打断），会重新安装。信任库中选定的证书始终是后备：在接受第一个中心
+证书集之前、以及没有有效中心证书集时都用它，所以服务不会落到没有证书的状态。
+
+请求是纯 HTTP，不走代理、不跟随重定向，并限制大小和时间。它只用于 tailnet：WireGuard
+认证本机的源地址，中心节点按地址放行。不会新增任何监听。
 
 ## 绝不监听 WAN
 
@@ -80,6 +109,7 @@ configd 输出、状态页或测试输出。密钥串长 8 到 128 个字符，�
 | --- | --- |
 | `/usr/local/etc/kazuhahub-radius/` | 生成的配置，0750 root:freeradius，文件 0640；卸载时删除 |
 | `/var/run/kazuhahub-radius/` | pid、控制套接字、上次检查结果 |
+| `/var/db/kazuhahub-radius/certsync/` | 已接受的中心证书集、上一套和最近一次同步结果，0700 root；卸载时删除 |
 | `/var/log/kazuhahub-radius/radius.log` | 守护进程日志 |
 | `/usr/local/opnsense/version/kazuhahub-radius` | 产品版本（JSON） |
 

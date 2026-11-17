@@ -1,8 +1,9 @@
 # Kazuha Hub RADIUS proxy: the EAP module, EAP-TTLS only.
 # Rendered from the OPNsense configuration; manual edits are overwritten.
 #
-# The certificate files are exported from the OPNsense trust store by the
-# rc script before every start: the leaf followed by the chain in server.pem,
+# The certificate files are exported by the rc script before every start, from
+# the set synced from the central node while it is valid, else from the OPNsense
+# trust store: the leaf followed by the chain in server.pem,
 # so the chain is sent to the clients, the key in server.key and the
 # authority in ca.pem.
 

@@ -115,6 +115,26 @@ switch ($mode) {
         seed_answer(['result' => 'saved', 'enabled' => $enabled, 'centrals' => $index]);
         break;
 
+    case 'certsync':
+        /* certsync HOST PORT on|off [SECRETS]: the sync settings through the model, as the page saves them;
+           with SECRETS, the account in SECRETS/sync-user and SECRETS/sync-password. */
+        $model = new General();
+        $nodes = ['cert_sync' => ($argv[4] ?? '') === 'on' ? '1' : '0',
+            'cert_sync_host' => (string)($argv[2] ?? ''), 'cert_sync_port' => (string)($argv[3] ?? '')];
+        if (isset($argv[5])) {
+            $nodes['cert_sync_user'] = seed_secret($argv[5], 'sync-user');
+            $nodes['cert_sync_password'] = seed_secret($argv[5], 'sync-password');
+        }
+        $model->setNodes($nodes);
+        $problems = seed_messages($model->performValidation(true));
+        if ($problems) {
+            seed_answer(['result' => 'invalid', 'fields' => $problems], 1);
+        }
+        $model->serializeToConfig(true);
+        Config::getInstance()->save(null, false);
+        seed_answer(['result' => 'saved', 'cert_sync' => (string)$model->cert_sync]);
+        break;
+
     case 'refusals':
         $answer = [];
         foreach (['wan', 'lan', 'lan,wan', 'opt99'] as $value) {

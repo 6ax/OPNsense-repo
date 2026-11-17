@@ -7,6 +7,9 @@
  *
  *   export_certs.php
  *
+ * The source is the set synced from the central node (certsync.php) while certificate sync is on
+ * and that set is valid; otherwise the server certificate and authority selected from the trust store.
+ *
  * Writes, under /usr/local/etc/kazuhahub-radius/certs:
  *   server.pem  the leaf followed by the authority chain, so clients get the chain
  *   server.key  the private key
@@ -16,7 +19,10 @@
  * never printed; on failure one line says what is wrong.
  */
 
-const KAZUHAHUB_RADIUS_CERT_DIR = '/usr/local/etc/kazuhahub-radius/certs';
+/* Overridable so the tests can use a scratch directory. */
+if (!defined('KAZUHAHUB_RADIUS_CERT_DIR')) {
+    define('KAZUHAHUB_RADIUS_CERT_DIR', '/usr/local/etc/kazuhahub-radius/certs');
+}
 const KAZUHAHUB_RADIUS_GROUP = 'freeradius';
 const KAZUHAHUB_RADIUS_MAX_CHAIN = 8;
 
@@ -120,7 +126,14 @@ function kazuhahub_radius_write($path, $content, $group = null)
  */
 function kazuhahub_radius_export($directory, $certificate, $key, array $chain, $group = null)
 {
-    $files = kazuhahub_radius_bundle($certificate, $key, $chain);
+    return kazuhahub_radius_install($directory, kazuhahub_radius_bundle($certificate, $key, $chain), $group);
+}
+
+/**
+ * Write a bundle built by kazuhahub_radius_bundle() into a directory; returns the names that changed.
+ */
+function kazuhahub_radius_install($directory, array $files, $group = null)
+{
     if (is_link($directory)) {
         throw new RuntimeException('Refusing to use a symbolic link as the certificate directory.');
     }
@@ -143,6 +156,19 @@ function kazuhahub_radius_export($directory, $certificate, $key, array $chain, $
 function kazuhahub_radius_main()
 {
     $general = config_read_array('OPNsense', 'kazuhahubradius', 'general', false);
+    $group = function_exists('posix_getgrnam') && posix_getgrnam(KAZUHAHUB_RADIUS_GROUP) !== false
+        ? KAZUHAHUB_RADIUS_GROUP : null;
+    /* The set synced from the central node wins while it is valid; the trust store is the fallback. */
+    if (($general['cert_sync'] ?? '1') === '1') {
+        require_once __DIR__ . '/certsync.php';
+        $synced = kazuhahub_radius_sync_current();
+        if ($synced !== null) {
+            return ['central set', kazuhahub_radius_install(KAZUHAHUB_RADIUS_CERT_DIR, $synced, $group)];
+        }
+        if (is_dir(KAZUHAHUB_RADIUS_SYNC_DIR . '/current')) {
+            kazuhahub_radius_sync_log(LOG_WARNING, 'the accepted central set is not valid now; using the trust store.');
+        }
+    }
     $certref = (string)($general['servercert'] ?? '');
     /* The legacy config reader turns every element named ca into a list of one, whatever it is nested in. */
     $caref = is_array($general['ca'] ?? null) ? reset($general['ca']) : ($general['ca'] ?? '');
@@ -166,23 +192,22 @@ function kazuhahub_radius_main()
         $chain[] = base64_decode($ca['crt']);
         $next = (string)($ca['caref'] ?? '');
     }
-    $group = function_exists('posix_getgrnam') && posix_getgrnam(KAZUHAHUB_RADIUS_GROUP) !== false
-        ? KAZUHAHUB_RADIUS_GROUP : null;
-    return kazuhahub_radius_export(
+    return ['trust store', kazuhahub_radius_export(
         KAZUHAHUB_RADIUS_CERT_DIR,
         base64_decode($cert['crt']),
         base64_decode($cert['prv']),
         $chain,
         $group
-    );
+    )];
 }
 
 if (PHP_SAPI === 'cli' && !defined('KAZUHAHUB_RADIUS_NO_MAIN')) {
     require_once('config.inc');
     require_once('certs.inc');
     try {
-        $changed = kazuhahub_radius_main();
-        echo $changed ? 'Exported: ' . implode(', ', $changed) . "\n" : "Certificates are up to date.\n";
+        [$source, $changed] = kazuhahub_radius_main();
+        echo $changed ? 'Exported from the ' . $source . ': ' . implode(', ', $changed) . "\n"
+            : 'Certificates from the ' . $source . " are up to date.\n";
     } catch (Throwable $error) {
         echo $error->getMessage() . "\n";
         exit(1);
