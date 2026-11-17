@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
-/usr/local/opnsense/scripts/firmware/repos/kazuha.sh
+# The repository itself is configured by os-kazuhahub-repo, installed first as
+# this package's dependency.  Registration stays so that the Plugins page lists
+# this package and an operator can remove it there once it is no longer needed.
 if [ -x /usr/local/opnsense/scripts/firmware/register.php ]; then
     /usr/local/opnsense/scripts/firmware/register.php install os-kazuha-repo
 fi

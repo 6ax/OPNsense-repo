@@ -100,7 +100,7 @@ Mihomo 的 DNS/TUN 恢复辅助脚本另用真实 Core 的隔离 XML 验证较�
 
 ```sh
 php src/os-sing-box/tests/native/test-config-setup.php
-php src/os-kazuha-repo/tests/native/test-manifest-lock.php
+php src/os-kazuhahub-repo/tests/native/test-manifest-lock.php
 php src/os-mihomo/tests/native/test-integration-lock.php
 php src/common/tests/native/test-backup-cas.php
 php src/common/tests/native/test-backup-model.php

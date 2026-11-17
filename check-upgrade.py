@@ -36,7 +36,7 @@ def check(url, abi, series):
                 path.write_bytes(response.read())
             return path
 
-        key = download('kazuha.pub')
+        key = download('kazuhahub.pub')
         if hashlib.sha256(key.read_bytes()).hexdigest() != verification.FINGERPRINT:
             raise ValueError('Incorrect repository trust anchor.')
         payload = download('release.json').read_bytes()
@@ -64,7 +64,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--abi', required=True)
     parser.add_argument('--product-abi', required=True)
-    parser.add_argument('--site-url', default='https://kkazuhak.github.io/OPNsense-repo')
+    parser.add_argument('--site-url', default='https://kazuhahub.github.io/OPNsense-repo')
     args = parser.parse_args()
     try:
         result = check(args.site_url, args.abi, args.product_abi)

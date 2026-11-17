@@ -11,6 +11,7 @@ Copy the clean source revision to the recipe's native build host, excluding loca
 ```sh
 (cd src/os-mihomo && sh build.sh)
 (cd src/os-sing-box && sh build.sh)
+(cd src/os-kazuhahub-repo && sh build.sh)
 (cd src/os-kazuha-repo && sh build.sh)
 python3.13 -B -m unittest discover -s src/os-mihomo/tests -v
 python3.13 -B -m unittest discover -s src/os-sing-box/tests -v
@@ -29,11 +30,12 @@ SOURCE_COMMIT=<tested-40-character-commit> \
   LEGACY_REPO=/path/to/legacy/repo \
   sh build-repo.sh src/os-mihomo/dist/FreeBSD:15:amd64/os-mihomo-1.4.0.pkg \
     src/os-sing-box/dist/os-sing-box-1.1.6.pkg \
-    src/os-kazuha-repo/dist/os-kazuha-repo-1.0.1.pkg
+    src/os-kazuhahub-repo/dist/os-kazuhahub-repo-1.0.0.pkg \
+    src/os-kazuha-repo/dist/os-kazuha-repo-1.1.0.pkg
 python3 verify-repo.py .site --source .
 ```
 
-Each Mihomo package reads its adjacent `test-report.json`; `TEST_REPORT` remains an optional override for the first candidate. Supply every enabled target in one signing run. Reports bind the native kernel/userland ABI, native OPNsense series, Python, executed lifecycle checks and exact archive digest to the source commit. The signer rejects disabled, missing, duplicate and mismatched targets. Additional updated packages are digest-bound and source-checked. `os-kazuha-repo` contains only a shell hook, public key and metadata; its ABI-independent archive has no Python dependency. Legacy downloads have no new lifecycle attestation.
+Each Mihomo package reads its adjacent `test-report.json`; `TEST_REPORT` remains an optional override for the first candidate. Supply every enabled target in one signing run. Reports bind the native kernel/userland ABI, native OPNsense series, Python, executed lifecycle checks and exact archive digest to the source commit. The signer rejects disabled, missing, duplicate and mismatched targets. Additional updated packages are digest-bound and source-checked. `os-kazuhahub-repo` contains only a shell hook, public key and metadata; its ABI-independent archive has no Python dependency. Legacy downloads have no new lifecycle attestation.
 
 ## Publishing any other plugin
 
@@ -58,7 +60,17 @@ sh publish-repo.sh
 
 The publisher requires the report's source revision to equal the clean checkout, reruns regression tests and refuses private files. It uses the existing user Git identity, creates an orphan gh-pages artifact commit and replaces that branch with force-with-lease. Pages reruns tests from the signed source revision, PHP syntax including .inc, shell checks and package/source comparisons before deployment. Main requires a successful validate check. One authorized historical cleanup removed old package trees, local handoff files and AI trailers; ordinary source updates use protected main. GitHub caches, forks and unreferenced objects may retain earlier public material until separately purged.
 
-Configure Pages to deploy with GitHub Actions. The [public endpoint](https://kkazuhak.github.io/OPNsense-repo/) supplies the hierarchy required by pkg, including legacy URLs. Flat Release attachments are not used as the pkg endpoint. opnwall.conf is not published; clients use the fingerprint-checked kazuha configuration on the front page.
+Configure Pages to deploy with GitHub Actions. The [public endpoint](https://kazuhahub.github.io/OPNsense-repo/) supplies the hierarchy required by pkg, including legacy URLs. Flat Release attachments are not used as the pkg endpoint. opnwall.conf is not published; clients use the fingerprint-checked kazuhahub configuration on the front page.
+
+## Repository rename and address move
+
+On 2026-11-16 the source moved from `KKazuhaK/OPNsense-repo` to `KazuhaHub/OPNsense-repo`, and the repository plugin was renamed from `os-kazuha-repo` to `os-kazuhahub-repo`. The signing key and its fingerprint did not change. Git URLs redirect after a transfer; the Pages address does not.
+
+- **New address**: `https://kazuhahub.github.io/OPNsense-repo/`, deployed by this repository's Pages workflow.
+- **Legacy address**: `https://kkazuhak.github.io/OPNsense-repo/` is served by the owner's user site `KKazuhaK/KKazuhaK.github.io`, which carries the same signed tree under `/OPNsense-repo/`. `publish-repo.sh` pushes every release there as well, with the workflow and README in `packaging/legacy-pages/`. Catalogs and packages do not depend on the address, so nothing is signed twice. Once every router has moved, publish with `PUBLISH_MIRROR=` (empty) and freeze or retire the user site.
+- **Upgrade path**: `os-kazuha-repo` 1.1.0 is a transitional package that depends on `os-kazuhahub-repo`. FreeBSD pkg has no Obsoletes/Replaces, so an ordinary firmware update upgrades the old name and installs the new one as its dependency. The new hook writes `/usr/local/etc/pkg/repos/kazuhahub.conf` and `keys/kazuhahub.pub`, then removes the `kazuha.conf` and `kazuha.pub` the old package wrote. It removes only that exact configuration and a key with the pinned fingerprint. The restore manifest moves from `//OPNsense/KazuhaRepo/backup` to `//OPNsense/KazuhaHubRepo/backup`: it is read from the old section until the first write, and the old section is left in place for a downgrade. Packages installed under the old repository name are still recognised.
+- **What is left of the old name**: only a forwarding `kazuha.sh`, because plugins built before the rename call it after they install. With no arguments, which is how firmware configure runs it, it does nothing. Once every plugin has been released with a post-install that calls `kazuhahub.sh`, remove `os-kazuha-repo` from **System → Firmware → Plugins**; removing it leaves the repository untouched.
+- **Rollout**: run it on the test host first, then on each router in a window: back up the configuration, run `POST /api/core/firmware/update` (or upgrade `os-kazuha-repo`), then check that `pkg -vv` lists `kazuhahub` with the new URL and no `kazuha` repository, that `pkg update -f` accepts the signed catalog, and that `kazuhahub.sh manifest` prints the plugins recorded before the change.
 
 ## Production maintenance window
 
@@ -82,7 +94,7 @@ On failure, delete the new plugin to restore owned DNS and remove owned configur
 2. Enable the complete target recipe, including the matching official OPNsense dependency repository and committed public signing fingerprint, bump the plugin package version or revision, and run **Build native firmware targets**. The default FreeBSD package flavor may lack the target Python/PyYAML pair; the isolated builder uses only the target firmware's signed dependency source. Its per-target FreeBSD VM artifacts are unsigned candidates, not publication authorization or proof of OPNsense API compatibility. The private key remains local.
 3. Exercise each candidate on its matching native OPNsense target, including the real VNET lifecycle harness and native PF/template/configd behavior. Collect each adjacent report and sign all enabled targets together, retaining the current target during transition.
 4. Publish before upgrading clients. Verify every target with `python3 check-upgrade.py --abi FreeBSD:15:amd64 --product-abi 26.7`, substituting the officially announced target values. The command verifies the trust anchor, report/catalog signatures, catalog membership, package digest and native attestation; unavailable or untested targets exit nonzero.
-5. In a maintenance window, run the front-page repository bootstrap to install `os-kazuha-repo`, then install/upgrade Mihomo. Its post-install registers only `os-mihomo`; use `/usr/local/opnsense/scripts/firmware/register.php install os-mihomo` to register an already installed package without reinstalling or restarting it. Do not run blanket `resync`.
+5. In a maintenance window, run the front-page repository bootstrap to install `os-kazuhahub-repo`, then install/upgrade Mihomo. Its post-install registers only `os-mihomo`; use `/usr/local/opnsense/scripts/firmware/register.php install os-mihomo` to register an already installed package without reinstalling or restarting it. Do not run blanket `resync`.
 6. Test the complete firmware upgrade before rollout. The official `<plugins>` list restores missing names using enabled repositories; it does not force reinstall present packages. True pkg upgrade/reinstall preserves policy, but a major upgrade solver that removes the package as a genuine uninstall revokes it. Verify that boundary on the actual target image before claiming end-to-end transparent resumption.
 
 Existing deployments must verify that the signed repository and Mihomo registration are present before relying on automatic package recovery after a firmware upgrade. Building or publishing an archive does not upgrade a running router; repository setup and gateway migration remain separate maintenance steps.

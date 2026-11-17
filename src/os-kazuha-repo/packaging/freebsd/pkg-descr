@@ -1,5 +1,6 @@
-Signed Kazuha repository configuration for OPNsense.
+Transitional package for the renamed Kazuha Hub repository.
 
-Registers a firmware repository hook and pins its public signing key. The hook
-selects a repository for the running OPNsense series without modifying other
-repositories. The package contains no native executable or Python runtime.
+The signed repository configuration moved to os-kazuhahub-repo, which this
+package depends on so that an ordinary firmware update installs it. What is
+left here forwards the restore manifest commands that other plugins still call
+by the old path. It can be removed once every plugin has been updated.

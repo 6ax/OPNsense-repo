@@ -250,7 +250,7 @@ class CatalogMembershipTests(ReleaseFixture):
     def site_report(self):
         package = self.package(self.recipes[0])
         report = self.prepare([package])
-        (self.site / 'kazuha.pub').write_bytes(b'Isolated test trust anchor')
+        (self.site / 'kazuhahub.pub').write_bytes(b'Isolated test trust anchor')
         (self.site / 'release.sig').write_bytes(b'Isolated test signature')
         repository = (self.site / report['packages'][0]['path']).parent.parent
         for name in ('meta.conf', 'data.pkg', 'packagesite.pkg'):
@@ -259,7 +259,7 @@ class CatalogMembershipTests(ReleaseFixture):
 
     def checked_site(self, report, catalog, source=False):
         (self.site / 'release.json').write_text(json.dumps(report))
-        fingerprint = hashlib.sha256((self.site / 'kazuha.pub').read_bytes()).hexdigest()
+        fingerprint = hashlib.sha256((self.site / 'kazuhahub.pub').read_bytes()).hexdigest()
         module = SimpleNamespace(enabled_targets=lambda project: self.recipes)
         # Cryptography and source byte comparison have separate tests; this
         # boundary exercises report validation and real package/catalog hashes.

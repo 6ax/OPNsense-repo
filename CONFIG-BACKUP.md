@@ -21,7 +21,7 @@
 | Wanguard | 直接使用原生 MVC 模型，包括监视接口、不想要的网络和私网开关；速率限制状态与移开的租约属于运行状态，不备份 | `OPNsense/wanguard` |
 | 汉化工具 | 系统语言选择已经在系统配置内；下载的翻译文件属于可重新安装的软件内容 | `system/language` |
 | Pftop | 没有持久配置；页面筛选参数和连接快照属于临时状态 | 无需配置镜像 |
-| KazuhaRepo | 已安装软件包的恢复清单，保留有效的软件包名和版本 | `OPNsense/KazuhaRepo/backup` |
+| KazuhaHubRepo | 已安装软件包的恢复清单，保留有效的软件包名和版本 | `OPNsense/KazuhaHubRepo/backup`（改名前为 `OPNsense/KazuhaRepo/backup`，仍可读取） |
 
 ## 使用
 
@@ -34,14 +34,14 @@
 新设备恢复后，可运行签名仓库引导脚本并传入 `--restore-plugins`：
 
 ```sh
-fetch -o /tmp/kazuha-client.sh https://kkazuhak.github.io/OPNsense-repo/client.sh
-sh /tmp/kazuha-client.sh --restore-plugins
+fetch -o /tmp/kazuhahub-client.sh https://kazuhahub.github.io/OPNsense-repo/client.sh
+sh /tmp/kazuhahub-client.sh --restore-plugins
 ```
 
-脚本使用 XML 中的 KazuhaRepo 清单，从当前 OPNsense 系列的签名目录安装
+脚本使用 XML 中的 KazuhaHubRepo 清单，从当前 OPNsense 系列的签名目录安装
 兼容的新版本。会先检查全部软件包是否可用，再执行安装。未传入该选项时
 只配置仓库。清单不受初始向导清空原生插件列表的影响；主动移除清单中的
-软件包可运行 `kazuha.sh forget os-<name>`。
+软件包可运行 `kazuhahub.sh forget os-<name>`。
 
 WebGUI 的保存和服务操作会同步配置镜像。六个使用共用组件的插件通过独立
 后台任务每秒检查外部文件修改，Lucky 和 DDNS-Go 的内置页面修改也会自动进入镜像。

@@ -234,7 +234,7 @@ def plugin_records(source):
     packaging/plugins.json:
 
       staging      "tree" reconstructs the package from src/, "repository" adds the
-                   signed product-series rewrite of os-kazuha-repo, "unsupported"
+                   signed product-series rewrite of os-kazuhahub-repo, "unsupported"
                    names a plugin this verifier refuses to publish and why.
       abi          "target" requires FreeBSD:<major>:amd64, "independent" requires
                    FreeBSD:*:amd64, or a concrete FreeBSD ABI pins one runtime.
@@ -726,7 +726,7 @@ def check_catalog_versions(manifests, repo, relative):
 
 
 def verify(site, source=None):
-    public_key = site / 'kazuha.pub'
+    public_key = site / 'kazuhahub.pub'
     if hashlib.sha256(public_key.read_bytes()).hexdigest() != FINGERPRINT:
         raise ValueError('Incorrect fleet trust anchor.')
     report = json.loads((site / 'release.json').read_bytes())
