@@ -198,7 +198,8 @@ class CertSyncTests(unittest.TestCase):
         self.assertIn('CURLOPT_PROTOCOLS => CURLPROTO_HTTP,', sync)
         self.assertIn('CURLOPT_FOLLOWLOCATION => false', sync)
         self.assertIn("CURLOPT_NOPROXY => '*'", sync)
-        self.assertIn("const KAZUHAHUB_RADIUS_SYNC_NAME = 'radius.kazuha.org';", sync)
+        # The expected certificate name is a setting, not a constant.
+        self.assertNotIn('kazuha.org', sync)
         self.assertIn("define('KAZUHAHUB_RADIUS_SYNC_DIR', '/var/db/kazuhahub-radius/certsync');", sync)
         # The exporter prefers the synced set and the sync restarts through the rc script after the check.
         export = (SCRIPTS / 'export_certs.php').read_text()
@@ -206,12 +207,13 @@ class CertSyncTests(unittest.TestCase):
         self.assertIn("const KAZUHAHUB_RADIUS_SYNC_RC = '/usr/local/etc/rc.d/kazuhahub_radiusd';", sync)
         self.assertIn("const KAZUHAHUB_RADIUS_SYNC_CHECK = '/usr/local/opnsense/scripts/kazuhahub-radius/check.sh';", sync)
 
-    def test_the_sync_defaults_to_on_against_the_production_node(self):
+    def test_the_sync_defaults_to_on_without_a_source(self):
         model = ET.parse(MODELS / 'General.xml').getroot().find('items')
         self.assertEqual(model.find('cert_sync').get('type'), 'BooleanField')
         self.assertEqual(model.find('cert_sync/Default').text, '1')
-        self.assertEqual(model.find('cert_sync_host/Default').text, '100.88.32.2')
-        self.assertEqual(model.find('cert_sync_port/Default').text, '11880')
+        # No source and no account ship as defaults: the admin enters them.
+        self.assertIsNone(model.find('cert_sync_host/Default'))
+        self.assertIsNone(model.find('cert_sync_port/Default'))
         # The account has no default: nothing is pulled until it is typed.
         self.assertIsNone(model.find('cert_sync_user/Default'))
         self.assertEqual(model.find('cert_sync_password').get('type'), 'UpdateOnlyTextField')
@@ -363,7 +365,7 @@ class ReleaseTests(unittest.TestCase):
         english = (PACKAGE / 'README.US.md').read_text()
         for text in [chinese, english]:
             for word in ['os-freeradius', 'freeradius3', 'kazuhahub-radius', '1812', 'radmin', 'eapol_test', 'ENTRA',
-                         '192.168.0.0/22']:
+                         '192.0.2.0/24']:
                 self.assertIn(word, text)
         self.assertRegex(chinese, r'[\u4e00-\u9fff]')
         self.assertNotRegex(english, r'[\u4e00-\u9fff]')

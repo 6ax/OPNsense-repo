@@ -509,7 +509,7 @@ run_rc_command() { case "$1" in prestart) kazuhahub_radiusd_prestart ;; prereloa
         self.conf = self.root / 'usr/local/etc/kazuhahub-radius'
         (self.conf / 'sites-enabled').mkdir(parents=True)
         self.site = self.conf / 'sites-enabled/default'
-        self.site.write_text('server default {\n\tlisten {\n\t\ttype = auth\n\t\tipaddr = 192.168.0.1\n\t\tport = 1812\n\t}\n\n'
+        self.site.write_text('server default {\n\tlisten {\n\t\ttype = auth\n\t\tipaddr = 192.0.2.1\n\t\tport = 1812\n\t}\n\n'
                              '\tlisten {\n\t\ttype = auth\n\t\tipaddr = 10.7.0.1\n\t\tport = 1812\n\t}\n}\n')
         self.check = self.root / 'usr/local/opnsense/scripts/kazuhahub-radius/check.sh'
         self.check.parent.mkdir(parents=True, exist_ok=True)
@@ -532,7 +532,7 @@ exit 0
         self.ifconfig.write_text('''#!/bin/sh
 printf 'ifconfig %s\\n' "$*" >> "$STUB_EVENTS"
 echo "vtnet0: flags=8843"
-for address in ${STUB_ADDRESSES:-192.168.0.1 10.7.0.1}; do echo "	inet $address netmask 0xffffff00 broadcast 255.255.255.255"; done
+for address in ${STUB_ADDRESSES:-192.0.2.1 10.7.0.1}; do echo "	inet $address netmask 0xffffff00 broadcast 255.255.255.255"; done
 ''')
         self.ifconfig.chmod(0o755)
 
@@ -569,7 +569,7 @@ for address in ${STUB_ADDRESSES:-192.168.0.1 10.7.0.1}; do echo "	inet $address 
         self.assertIn('check start', self.lines())
 
     def test_an_address_that_never_appears_refuses_the_start_after_waiting(self):
-        result = self.run_rc('prestart', STUB_ADDRESSES='192.168.0.1')
+        result = self.run_rc('prestart', STUB_ADDRESSES='192.0.2.1')
         self.assertEqual(result.returncode, 1)
         self.assertIn('the listen address is not configured on this firewall: 10.7.0.1', result.stderr)
         self.assertIn('check record the listen address is not configured on this firewall: 10.7.0.1', self.lines())
@@ -581,7 +581,7 @@ for address in ${STUB_ADDRESSES:-192.168.0.1 10.7.0.1}; do echo "	inet $address 
 count="$(cat "$STUB_EVENTS.count" 2>/dev/null || echo 0)"
 count=$((count + 1))
 echo "$count" > "$STUB_EVENTS.count"
-echo "	inet 192.168.0.1 netmask 0xffffff00"
+echo "	inet 192.0.2.1 netmask 0xffffff00"
 [ "$count" -lt 8 ] || echo "	inet 10.7.0.1 netmask 0xffffff00"
 ''')
         result = self.run_rc('prestart')
@@ -589,9 +589,9 @@ echo "	inet 192.168.0.1 netmask 0xffffff00"
         self.assertEqual(len([line for line in self.lines() if line.startswith('sleep')]), 3)
 
     def test_an_address_is_matched_whole_not_as_a_prefix(self):
-        result = self.run_rc('prestart', STUB_ADDRESSES='192.168.0.10 10.7.0.11')
+        result = self.run_rc('prestart', STUB_ADDRESSES='192.0.2.10 10.7.0.11')
         self.assertEqual(result.returncode, 1)
-        self.assertIn('192.168.0.1 10.7.0.1', result.stderr)
+        self.assertIn('192.0.2.1 10.7.0.1', result.stderr)
 
     def test_reload_renders_and_checks_the_configuration_first_and_stop_removes_the_socket(self):
         self.assertEqual(self.run_rc('prereload').returncode, 0)

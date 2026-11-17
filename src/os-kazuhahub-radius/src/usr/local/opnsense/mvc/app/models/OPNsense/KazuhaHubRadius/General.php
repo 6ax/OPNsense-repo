@@ -205,6 +205,11 @@ class General extends BaseModel
             }
         }
 
+        /* With the sync on, a source host needs its port; without a host the sync pulls nothing. */
+        if ((string)$this->cert_sync === '1' && trim((string)$this->cert_sync_host) !== '' && trim((string)$this->cert_sync_port) === '') {
+            $messages->appendMessage(new Message(gettext('Enter the port of the certificate source.'), 'cert_sync_port'));
+        }
+
         if ((string)$this->enabled !== '1') {
             return $messages;
         }

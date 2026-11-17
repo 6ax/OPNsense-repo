@@ -26,7 +26,7 @@
         <id>central.port</id>
         <label>Port</label>
         <type>text</type>
-        <help>UDP port of the central RADIUS server, 11812 by default.</help>
+        <help>UDP port of the central RADIUS server, 1812 by default.</help>
     </field>
     <field>
         <id>central.secret</id>

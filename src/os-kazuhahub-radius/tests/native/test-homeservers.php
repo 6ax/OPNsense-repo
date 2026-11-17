@@ -11,23 +11,23 @@ function check($condition, $message)
 }
 
 /* What radmin prints for "show home_server list" on FreeRADIUS 3.2.10. */
-$table = "127.0.0.2\t11812\tudp\tauth\talive\t0\n127.0.0.3\t11812\tudp\tauth\tzombie\t2\n" .
-    "100.88.32.2\t1645\tudp\tauth\tdead\t0\n100.88.33.1\t11812\tudp\tauth\tunknown\t0\n";
+$table = "127.0.0.2\t1812\tudp\tauth\talive\t0\n127.0.0.3\t1812\tudp\tauth\tzombie\t2\n" .
+    "198.51.100.10\t1645\tudp\tauth\tdead\t0\n198.51.100.11\t1812\tudp\tauth\tunknown\t0\n";
 $expected = [
-    ['address' => '127.0.0.2', 'port' => 11812, 'state' => 'alive', 'outstanding' => 0],
-    ['address' => '127.0.0.3', 'port' => 11812, 'state' => 'zombie', 'outstanding' => 2],
-    ['address' => '100.88.32.2', 'port' => 1645, 'state' => 'dead', 'outstanding' => 0],
-    ['address' => '100.88.33.1', 'port' => 11812, 'state' => 'unknown', 'outstanding' => 0],
+    ['address' => '127.0.0.2', 'port' => 1812, 'state' => 'alive', 'outstanding' => 0],
+    ['address' => '127.0.0.3', 'port' => 1812, 'state' => 'zombie', 'outstanding' => 2],
+    ['address' => '198.51.100.10', 'port' => 1645, 'state' => 'dead', 'outstanding' => 0],
+    ['address' => '198.51.100.11', 'port' => 1812, 'state' => 'unknown', 'outstanding' => 0],
 ];
 check(kazuhahub_radius_parse_home_servers($table) === $expected, 'The table was parsed wrongly.');
 check(kazuhahub_radius_parse_home_servers(str_replace("\n", "\r\n", $table)) === $expected, 'CRLF lines were parsed wrongly.');
 check(kazuhahub_radius_parse_home_servers(preg_replace('/\t/', '   ', $table)) === $expected, 'Spaces were parsed wrongly.');
 check(kazuhahub_radius_parse_home_servers('') === [], 'An empty table has servers.');
 /* Noise, other server types, odd states and bad addresses never make an entry, and never break the page. */
-check(kazuhahub_radius_parse_home_servers("radmin> prompt\n127.0.0.2\t11812\tudp\tacct\talive\t0\n" .
-    "not-an-ip\t11812\tudp\tauth\talive\t0\n127.0.0.4\tabc\tudp\tauth\talive\t0\n127.0.0.5\t11812\tudp\tauth\n") === [], 'Noise made entries.');
-$odd = kazuhahub_radius_parse_home_servers("127.0.0.6\t11812\tudp\tauth\t<script>\tmany\n");
-check($odd === [['address' => '127.0.0.6', 'port' => 11812, 'state' => 'unknown', 'outstanding' => 0]], 'An odd state leaked through.');
+check(kazuhahub_radius_parse_home_servers("radmin> prompt\n127.0.0.2\t1812\tudp\tacct\talive\t0\n" .
+    "not-an-ip\t1812\tudp\tauth\talive\t0\n127.0.0.4\tabc\tudp\tauth\talive\t0\n127.0.0.5\t1812\tudp\tauth\n") === [], 'Noise made entries.');
+$odd = kazuhahub_radius_parse_home_servers("127.0.0.6\t1812\tudp\tauth\t<script>\tmany\n");
+check($odd === [['address' => '127.0.0.6', 'port' => 1812, 'state' => 'unknown', 'outstanding' => 0]], 'An odd state leaked through.');
 
 $work = sys_get_temp_dir() . '/kazuhahub-radius-homeservers-' . bin2hex(random_bytes(6));
 mkdir($work, 0700);

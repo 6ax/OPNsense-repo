@@ -6,13 +6,13 @@ use OPNsense\Base\BaseModelMigration;
 use OPNsense\Core\Config;
 
 /**
- * First start of the model: offer the two central servers and the LAN as the
- * network of the access points. The servers start disabled and without secrets, so
- * nothing can be enabled until the operator has typed them.
+ * First start of the model: offer the LAN as the network of the access points.
+ * No central server is created; the operator adds them. A configuration that
+ * already holds central servers keeps them as they are.
  */
 class M1_0_0 extends BaseModelMigration
 {
-    /** The network a static LAN address belongs to, such as 192.168.0.0/22, or null. */
+    /** The network a static LAN address belongs to, such as 192.0.2.0/24, or null. */
     public static function networkOf($address, $prefix)
     {
         if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false || !ctype_digit((string)$prefix)) {
@@ -28,22 +28,6 @@ class M1_0_0 extends BaseModelMigration
 
     public function run($model)
     {
-        $known = false;
-        foreach ($model->centrals->central->iterateItems() as $existing) {
-            $known = true;
-            break;
-        }
-        if (!$known) {
-            foreach ([['Production', '100.88.32.2', '10'], ['4c6g', '100.88.33.1', '20']] as $seed) {
-                $node = $model->centrals->central->Add();
-                /* Off until the operator has typed the shared secret: an enabled server without one is refused. */
-                $node->enabled = '0';
-                $node->description = $seed[0];
-                $node->address = $seed[1];
-                $node->port = '11812';
-                $node->sequence = $seed[2];
-            }
-        }
         if ((string)$model->client_networks === '') {
             $lan = Config::getInstance()->object()->interfaces->lan ?? null;
             if ($lan !== null && !isset($lan->gateway)) {

@@ -92,7 +92,7 @@ switch ($mode) {
         foreach ($model->centrals->central->iterateItems() as $central) {
             if ($index < 2) {
                 $central->setNodes([
-                    'enabled' => '1', 'address' => $addresses[$index], 'port' => '11812',
+                    'enabled' => '1', 'address' => $addresses[$index], 'port' => '1814',
                     'secret' => seed_secret($directory, $secrets[$index]), 'sequence' => (string)(($index + 1) * 10),
                 ]);
             }
@@ -101,7 +101,7 @@ switch ($mode) {
         while ($index < 2) {
             $central = $model->centrals->central->Add();
             $central->setNodes([
-                'enabled' => '1', 'address' => $addresses[$index], 'port' => '11812',
+                'enabled' => '1', 'address' => $addresses[$index], 'port' => '1814',
                 'secret' => seed_secret($directory, $secrets[$index]), 'sequence' => (string)(($index + 1) * 10),
             ]);
             $index++;
@@ -119,7 +119,7 @@ switch ($mode) {
         /* certsync HOST PORT on|off [SECRETS]: the sync settings through the model, as the page saves them;
            with SECRETS, the account in SECRETS/sync-user and SECRETS/sync-password. */
         $model = new General();
-        $nodes = ['cert_sync' => ($argv[4] ?? '') === 'on' ? '1' : '0',
+        $nodes = ['cert_sync' => ($argv[4] ?? '') === 'on' ? '1' : '0', 'cert_sync_name' => 'radius.example.test',
             'cert_sync_host' => (string)($argv[2] ?? ''), 'cert_sync_port' => (string)($argv[3] ?? '')];
         if (isset($argv[5])) {
             $nodes['cert_sync_user'] = seed_secret($argv[5], 'sync-user');
@@ -155,7 +155,7 @@ switch ($mode) {
         $answer = [];
         $model = new General();
         $node = $model->centrals->central->Add();
-        $node->setNodes(['enabled' => '1', 'address' => '10.99.0.9', 'port' => '11812', 'secret' => '', 'sequence' => '5']);
+        $node->setNodes(['enabled' => '1', 'address' => '10.99.0.9', 'port' => '1812', 'secret' => '', 'sequence' => '5']);
         $answer['central_secret'] = in_array($node->secret->__reference, seed_messages($model->performValidation(false)), true)
             ? 'refused' : 'accepted';
         $model = new General();

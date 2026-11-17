@@ -5,7 +5,7 @@ import unittest
 import render_support as support
 from render_support import CENTRAL_SECRETS, CLIENT_SECRET, CONFIG_DIR, configuration, interface, render, targets
 
-ROW = {'enabled': '1', 'description': 'x', 'port': '11812', 'sequence': '10'}
+ROW = {'enabled': '1', 'description': 'x', 'port': '1814', 'sequence': '10'}
 
 
 def strip_comment(line):
@@ -120,7 +120,7 @@ class TemplateTests(unittest.TestCase):
         listeners = sections(site, 'listen')
         self.assertEqual(len(listeners), 1)
         self.assertEqual([(i['key'], i['value']) for i in listeners[0]['items']],
-                         [('type', 'auth'), ('ipaddr', '192.168.0.1'), ('port', '1812')])
+                         [('type', 'auth'), ('ipaddr', '192.0.2.1'), ('port', '1812')])
         authorize = section(site, 'authorize')
         self.assertEqual(calls(authorize), ['filter_username', 'reject'])
         self.assertEqual(heads(authorize), ['eap'])
@@ -135,14 +135,14 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(heads(site), ['listen', 'authorize', 'authenticate', 'post-proxy', 'post-auth'])
 
     def test_it_listens_on_each_selected_static_interface_and_nowhere_else(self):
-        extra = {'opt1': interface('192.168.8.1', '24'), 'opt2': interface('10.9.0.1', '24', blockpriv='0', blockbogons='0')}
+        extra = {'opt1': interface('198.51.100.1', '24'), 'opt2': interface('10.9.0.1', '24', blockpriv='0', blockbogons='0')}
         site = self.default_site(interfaces='lan,opt1,opt2', extra_interfaces=extra)
         self.assertEqual([values(item, 'ipaddr') for item in sections(site, 'listen')],
-                         [['192.168.0.1'], ['192.168.8.1'], ['10.9.0.1']])
+                         [['192.0.2.1'], ['198.51.100.1'], ['10.9.0.1']])
         # A repeated interface and a repeated address listen once.
-        extra['opt3'] = interface('192.168.8.1', '24')
+        extra['opt3'] = interface('198.51.100.1', '24')
         site = self.default_site(interfaces='lan,lan,opt1,opt3', extra_interfaces=extra)
-        self.assertEqual([values(item, 'ipaddr') for item in sections(site, 'listen')], [['192.168.0.1'], ['192.168.8.1']])
+        self.assertEqual([values(item, 'ipaddr') for item in sections(site, 'listen')], [['192.0.2.1'], ['198.51.100.1']])
 
     def test_the_wan_and_anything_wan_like_never_gets_a_listener(self):
         extra = {
@@ -170,7 +170,7 @@ class TemplateTests(unittest.TestCase):
             self.assertNotIn(forbidden, text)
         # Mixed with a good interface, only the good one is used and no fallback is added.
         text = self.files(interfaces='wan,lan,' + ','.join(sorted(extra)), extra_interfaces=extra)[path('sites-enabled/default')]
-        self.assertEqual(re.findall(r'ipaddr = (\S+)', text), ['192.168.0.1'])
+        self.assertEqual(re.findall(r'ipaddr = (\S+)', text), ['192.0.2.1'])
         self.assertNotIn('no-listen-address', text)
 
     def test_a_missing_or_empty_selection_never_produces_a_wildcard_listener(self):
@@ -204,7 +204,7 @@ class TemplateTests(unittest.TestCase):
                         walk(item)
             walk(tree)
         self.assertEqual(listeners, [
-            {'type': 'auth', 'ipaddr': '192.168.0.1', 'port': '1812'},
+            {'type': 'auth', 'ipaddr': '192.0.2.1', 'port': '1812'},
             {'ipaddr': '127.0.0.1', 'port': '18120', 'type': 'auth'},
             {'type': 'control', 'socket': '${run_dir}/${name}.sock', 'mode': 'ro'}])
 
@@ -245,10 +245,10 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual([values(item, 'default_fallback') for item in sections(tree, 'proxy server')], [['no']])
         servers = self.home_servers(tree)
         self.assertEqual([item['head'] for item in servers], ['home_server central_1', 'home_server central_2'])
-        expected = {'type': 'auth', 'port': '11812', 'require_message_authenticator': 'yes', 'response_window': '15',
+        expected = {'type': 'auth', 'port': '1814', 'require_message_authenticator': 'yes', 'response_window': '15',
                     'zombie_period': '40', 'status_check': 'status-server', 'check_interval': '30',
                     'check_timeout': '4', 'num_answers_to_alive': '3'}
-        for server, address, secret in zip(servers, ['100.88.32.2', '100.88.33.1'], CENTRAL_SECRETS):
+        for server, address, secret in zip(servers, ['198.51.100.10', '198.51.100.11'], CENTRAL_SECRETS):
             options = {item['key']: item['value'] for item in server['items']}
             self.assertEqual(options, {**expected, 'ipaddr': address, 'secret': '"%s"' % secret})
         pool = section(tree, 'home_server_pool central')
@@ -275,7 +275,7 @@ class TemplateTests(unittest.TestCase):
         tree = self.proxy(central_rows=rows)
         servers = self.home_servers(tree)
         self.assertEqual([values(item, 'ipaddr')[0] for item in servers], ['10.0.0.20', '10.0.0.10', '10.0.0.30'])
-        self.assertEqual([values(item, 'port')[0] for item in servers], ['11812', '1645', '11812'])
+        self.assertEqual([values(item, 'port')[0] for item in servers], ['1814', '1645', '1814'])
         self.assertEqual(values(section(tree, 'home_server_pool central'), 'home_server'),
                          ['central_1', 'central_2', 'central_3'])
 
@@ -291,7 +291,7 @@ class TemplateTests(unittest.TestCase):
     def test_a_malformed_central_server_is_skipped_rather_than_written(self):
         good = {**ROW, 'address': '10.0.0.9', 'secret': 'good-secret-000001'}
         for bad in [{'address': 'not-an-address'}, {'address': '10.0.0.999'}, {'address': '10.0.0.1/24'}, {'address': ''},
-                    {'port': '0'}, {'port': '70000'}, {'port': 'abc'}, {'port': ''}, {'address': '1.2.3.4}\nrealm X'}, {'address': '10.0.0.8\n'}, {'port': '11812\n'}]:
+                    {'port': '0'}, {'port': '70000'}, {'port': 'abc'}, {'port': ''}, {'address': '1.2.3.4}\nrealm X'}, {'address': '10.0.0.8\n'}, {'port': '1814\n'}]:
             with self.subTest(bad=bad):
                 row = {**ROW, 'address': '10.0.0.8', 'secret': 'bad-secret-0000001', **bad}
                 servers = self.home_servers(self.proxy(central_rows=[row, good]))
@@ -367,17 +367,17 @@ class TemplateTests(unittest.TestCase):
             with self.subTest(gateways=gateways):
                 config = self.uplink_config()
                 config['OPNsense']['Gateways'] = gateways
-                self.assertEqual(self.listen_addresses(config), ['192.168.0.1'])
+                self.assertEqual(self.listen_addresses(config), ['192.0.2.1'])
         # Only the uplink loses its listener when several interfaces are selected.
         config = self.uplink_config(interfaces='lan,opt1', extra_interfaces={'opt1': interface('10.1.0.1', '24')})
         config['OPNsense']['Gateways'] = {'gateway_item': {'interface': 'opt1'}}
-        self.assertEqual(self.listen_addresses(config), ['192.168.0.1'])
+        self.assertEqual(self.listen_addresses(config), ['192.0.2.1'])
 
     # --- client networks -------------------------------------------------------------
 
     def test_repeated_networks_become_one_client(self):
-        tree = parse(self.files(networks='10.7.0.0/24,10.7.0.0/24, 172.16.5.9 ,172.16.5.9/32,192.168.0.0/22')[path('clients.conf')])
-        self.assertEqual([values(item, 'ipv4addr')[0] for item in tree['items']], ['10.7.0.0/24', '172.16.5.9', '192.168.0.0/22'])
+        tree = parse(self.files(networks='10.7.0.0/24,10.7.0.0/24, 172.16.5.9 ,172.16.5.9/32,192.0.2.0/24')[path('clients.conf')])
+        self.assertEqual([values(item, 'ipv4addr')[0] for item in tree['items']], ['10.7.0.0/24', '172.16.5.9', '192.0.2.0/24'])
         self.assertEqual([item['head'] for item in tree['items']],
                          ['client kazuhahub-ap-1', 'client kazuhahub-ap-2', 'client kazuhahub-ap-3'])
 
@@ -390,11 +390,11 @@ class TemplateTests(unittest.TestCase):
     # --- clients.conf ---------------------------------------------------------------
 
     def test_one_client_per_network_with_the_access_point_secret(self):
-        tree = parse(self.files(networks='192.168.0.0/22,10.7.0.0/24,172.16.5.9')[path('clients.conf')])
+        tree = parse(self.files(networks='192.0.2.0/24,10.7.0.0/24,172.16.5.9')[path('clients.conf')])
         clients = [item for item in tree['items'] if item['head'].startswith('client ')]
         self.assertEqual([item['head'] for item in clients],
                          ['client kazuhahub-ap-1', 'client kazuhahub-ap-2', 'client kazuhahub-ap-3'])
-        self.assertEqual([values(item, 'ipv4addr')[0] for item in clients], ['192.168.0.0/22', '10.7.0.0/24', '172.16.5.9'])
+        self.assertEqual([values(item, 'ipv4addr')[0] for item in clients], ['192.0.2.0/24', '10.7.0.0/24', '172.16.5.9'])
         for client in clients:
             self.assertEqual({item['key']: item['value'] for item in client['items']}, {
                 'ipv4addr': client['items'][0]['value'], 'secret': '"%s"' % CLIENT_SECRET,
@@ -407,7 +407,7 @@ class TemplateTests(unittest.TestCase):
                 self.assertEqual(tree['items'], [])
         text = self.files()[path('clients.conf')]
         self.assertNotIn('127.0.0.1', text)
-        self.assertEqual(self.files(networks='192.168.0.0/22, bad ,10.7.0.0/24')[path('clients.conf')].count('client kazuhahub-ap-'), 2)
+        self.assertEqual(self.files(networks='192.0.2.0/24, bad ,10.7.0.0/24')[path('clients.conf')].count('client kazuhahub-ap-'), 2)
 
     # --- modules, policy and main file ---------------------------------------------
 

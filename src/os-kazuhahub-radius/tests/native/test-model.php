@@ -50,7 +50,7 @@ file_put_contents($fixture, '<?xml version="1.0"?><opnsense><system><hostname>pr
     '<interfaces>' .
     '<wan><if>vtnet1</if><enable>1</enable><ipaddr>203.0.113.9</ipaddr><subnet>28</subnet><gateway>WAN_GW</gateway>' .
     '<blockpriv>1</blockpriv><blockbogons>1</blockbogons><descr>WAN</descr></wan>' .
-    '<lan><if>vtnet0</if><enable>1</enable><ipaddr>192.168.0.1</ipaddr><subnet>22</subnet><blockpriv>0</blockpriv><blockbogons>0</blockbogons><descr>LAN</descr></lan>' .
+    '<lan><if>vtnet0</if><enable>1</enable><ipaddr>192.0.2.1</ipaddr><subnet>24</subnet><blockpriv>0</blockpriv><blockbogons>0</blockbogons><descr>LAN</descr></lan>' .
     /* static with an upstream gateway: a WAN under another name */
     '<opt1><if>vtnet2</if><enable>1</enable><ipaddr>198.51.100.2</ipaddr><subnet>24</subnet><gateway>OTHER_GW</gateway><descr>WAN2</descr></opt1>' .
     '<opt2><if>vtnet3</if><enable>1</enable><ipaddr>dhcp</ipaddr><descr>DHCP</descr></opt2>' .
@@ -106,16 +106,14 @@ try {
     model_check($options === ['lan', 'opt1', 'opt4', 'opt6', 'opt7', 'opt8', 'wan'] || $options === ['lan', 'opt1', 'opt6', 'opt7', 'opt8', 'wan'],
         'Only enabled static interfaces may be offered: ' . json_encode($options));
 
-    /* The first run offers both central servers and the LAN subnet; the secrets stay empty. */
+    /* The first run offers the LAN subnet and creates no central server; the admin adds them. */
     $model->runMigrations();
     $addresses = [];
     foreach ($model->centrals->central->iterateItems() as $central) {
-        $addresses[] = (string)$central->address . ':' . (string)$central->port . ':' . (string)$central->sequence;
-        model_check((string)$central->enabled === '0', 'A seeded central server is enabled without a secret.');
-        model_check($central->secret->getValue() === '', 'A seeded central server has a secret.');
+        $addresses[] = (string)$central->address;
     }
-    model_check($addresses === ['100.88.32.2:11812:10', '100.88.33.1:11812:20'], 'The seeded centrals changed: ' . json_encode($addresses));
-    model_check((string)$model->client_networks === '192.168.0.0/22', 'The LAN network was not offered: ' . $model->client_networks);
+    model_check($addresses === [], 'The first run created central servers: ' . json_encode($addresses));
+    model_check((string)$model->client_networks === '192.0.2.0/24', 'The LAN network was not offered: ' . $model->client_networks);
     /* Reload the fixture: the seeds were only applied in memory and must not reach the cases below. */
     $config->lock();
     $config->lock(false);
@@ -151,18 +149,18 @@ try {
     $candidate->interfaces = 'lan,wan';
     $candidate->servercert = 'cert1';
     $candidate->ca = 'ca1';
-    $candidate->client_networks = '192.168.0.0/22';
+    $candidate->client_networks = '192.0.2.0/24';
     $candidate->client_secret = $apSecret;
-    model_central($candidate, '10.99.0.1', '11812', $centralSecret);
+    model_central($candidate, '10.99.0.1', '1812', $centralSecret);
     model_check(in_array('interfaces', model_fields(model_validate($candidate, false)), true),
         'A configuration that listens on the WAN validated.');
 
     /* Other fields. */
     $cases = [
-        ['client_networks', '192.168.0.0/22', []],
-        ['client_networks', '192.168.0.0/22,10.7.0.0/24', []],
-        ['client_networks', '192.168.0.1', []],
-        ['client_networks', '192.168.0.1/22', ['client_networks']],     /* host bits */
+        ['client_networks', '192.0.2.0/24', []],
+        ['client_networks', '192.0.2.0/24,10.7.0.0/24', []],
+        ['client_networks', '192.0.2.1', []],
+        ['client_networks', '192.0.2.1/24', ['client_networks']],     /* host bits */
         ['client_networks', '10.0.0.0/7', ['client_networks']],         /* wider than the template keeps */
         ['client_networks', '0.0.0.0/0', ['client_networks']],
         ['client_networks', '10.0.0.0/8', []],
@@ -179,7 +177,22 @@ try {
         ['ca', 'ca1', []],
         ['ca', 'cert1', ['ca']],
         ['enabled', '2', ['enabled']],
+        ['cert_sync_name', 'radius.example.test', []],
+        ['cert_sync_name', '192.0.2.1', ['cert_sync_name']],
+        ['cert_sync_user', 'site-a', []],
+        ['cert_sync_user', 'has:colon', ['cert_sync_user']],
     ];
+    /* A source host needs its port while the sync is on, and only then. */
+    foreach ([['1', '198.51.100.10', '', ['cert_sync_port']], ['1', '198.51.100.10', '8080', []], ['1', '', '', []],
+              ['0', '198.51.100.10', '', []]] as [$on, $host, $port, $expected]) {
+        $candidate = model_fresh();
+        $candidate->cert_sync = $on;
+        $candidate->cert_sync_host = $host;
+        $candidate->cert_sync_port = $port;
+        $fields = model_fields(model_validate($candidate, true));
+        model_check($fields === $expected, sprintf('sync %s, host %s, port %s: expected %s, got %s', $on, $host, $port,
+            json_encode($expected), json_encode($fields)));
+    }
     foreach ($cases as [$field, $value, $expected]) {
         $candidate = model_fresh();
         $candidate->$field = $value;
@@ -190,14 +203,14 @@ try {
 
     /* A central server needs a valid address, port and sequence, and the address and port are unique. */
     $candidate = model_fresh();
-    $one = model_central($candidate, '10.99.0.1', '11812', $centralSecret);
-    $two = model_central($candidate, '10.99.0.1', '11812', $centralSecret, '1', '20');
+    $one = model_central($candidate, '10.99.0.1', '1812', $centralSecret);
+    $two = model_central($candidate, '10.99.0.1', '1812', $centralSecret, '1', '20');
     $fields = array_filter(model_fields(model_validate($candidate, true)), fn($f) => strpos($f, 'centrals.central.') === 0);
     model_check(count($fields) > 0, 'A duplicate central server validated.');
     foreach ([['address', 'not-an-address'], ['address', '10.0.0.0/8'], ['address', '::1'], ['port', '0'], ['port', '70000'],
               ['port', 'abc'], ['sequence', '0'], ['secret', 'short']] as [$field, $value]) {
         $candidate = model_fresh();
-        $node = model_central($candidate, '10.99.0.1', '11812', $centralSecret);
+        $node = model_central($candidate, '10.99.0.1', '1812', $centralSecret);
         $node->$field = $value;
         $fields = array_filter(model_fields(model_validate($candidate, true)), fn($f) => strpos($f, 'centrals.central.') === 0);
         model_check(count($fields) === 1, sprintf('central %s=%s validated: %s', $field, $value, json_encode($fields)));
@@ -235,10 +248,10 @@ try {
     foreach (['0', '1'] as $service) {
         $candidate = model_fresh();
         $candidate->enabled = $service;
-        $node = model_central($candidate, '10.99.0.1', '11812', '', '1');
+        $node = model_central($candidate, '10.99.0.1', '1812', '', '1');
         $fields = model_fields(model_validate($candidate, false));
         model_check(in_array($node->secret->__reference, $fields, true), "service=$service: no message on the secret field.");
-        $off = model_central($candidate, '10.99.0.2', '11812', '', '0', '20');
+        $off = model_central($candidate, '10.99.0.2', '1812', '', '0', '20');
         model_check(!in_array($off->secret->__reference, model_fields(model_validate($candidate, false)), true),
             'A disabled central server was asked for a secret.');
         $node->secret = 'bad secret!';
@@ -253,7 +266,7 @@ try {
     $candidate->ca = 'ca1';
     $candidate->client_secret = $apSecret;
     model_check(model_fields(model_validate($candidate, false)) === ['enabled'], 'No central server at all validated.');
-    model_central($candidate, '10.99.0.1', '11812', $centralSecret, '0');
+    model_central($candidate, '10.99.0.1', '1812', $centralSecret, '0');
     model_check(model_fields(model_validate($candidate, false)) === ['enabled'], 'Only a disabled central server validated.');
 
     /* Secrets are update-only: never read back, kept by an empty write, replaced by a new one. */
@@ -262,11 +275,11 @@ try {
     $model->interfaces = 'lan,opt7';
     $model->servercert = 'cert1';
     $model->ca = 'ca1';
-    $model->client_networks = '192.168.0.0/22,10.7.0.0/24';
+    $model->client_networks = '192.0.2.0/24,10.7.0.0/24';
     $model->client_secret = $apSecret;
-    $first = model_central($model, '10.99.0.1', '11812', $centralSecret, '1', '10');
-    $second = model_central($model, '10.99.0.2', '11812', $otherSecret, '1', '20');
-    model_check(count(model_validate($model, true)) === 0, 'The Irvine-style settings do not validate.');
+    $first = model_central($model, '10.99.0.1', '1812', $centralSecret, '1', '10');
+    $second = model_central($model, '10.99.0.2', '1812', $otherSecret, '1', '20');
+    model_check(count(model_validate($model, true)) === 0, 'Typical settings do not validate.');
     $dump = json_encode($model->getNodes());
     foreach ([$apSecret, $centralSecret, $otherSecret] as $secret) {
         model_check(strpos($dump, $secret) === false, 'The model handed out a secret.');
@@ -285,7 +298,7 @@ try {
     $xml = simplexml_load_file($fixture);
     $general = $xml->OPNsense->kazuhahubradius->general;
     model_check((string)$general->enabled === '1' && (string)$general->interfaces === 'lan,opt7' &&
-        (string)$general->client_networks === '192.168.0.0/22,10.7.0.0/24' && (string)$general->servercert === 'cert1' &&
+        (string)$general->client_networks === '192.0.2.0/24,10.7.0.0/24' && (string)$general->servercert === 'cert1' &&
         (string)$general->client_secret === $apSecret, 'The settings did not reach config.xml as expected.');
     model_check(count($general->centrals->central) === 2 &&
         (string)$general->centrals->central[0]->secret === $centralSecret &&

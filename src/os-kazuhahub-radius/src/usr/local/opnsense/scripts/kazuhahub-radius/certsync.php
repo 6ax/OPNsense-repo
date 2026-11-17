@@ -9,10 +9,10 @@
  *   certsync.php state   print what the sync knows as JSON
  *
  * The central node publishes SHA256SUMS, server.pem, server.key and ca.pem over plain HTTP on the
- * tailnet, behind one HTTP Basic account per site; without an account nothing is pulled. A run fetches SHA256SUMS first and the
+ * private network, behind one HTTP Basic account per site; without an account nothing is pulled. A run fetches SHA256SUMS first and the
  * three files only when it differs from the accepted set. A set is accepted only if every file
- * matches its sum, the certificate chains to the fetched authority, is valid now, names
- * radius.kazuha.org and matches the key. It is then kept under /var/db/kazuhahub-radius/certsync,
+ * matches its sum, the certificate chains to the fetched authority, is valid now, carries the
+ * expected name in its subjectAltName and matches the key. It is then kept under /var/db/kazuhahub-radius/certsync,
  * the exporter writes it where the daemon reads its certificates, the configuration is checked and
  * the service restarted, if it was running. Any failure leaves the service on the set it has: a new
  * set that fails the check or the restart is rolled back, the previous files are put back and the
@@ -30,7 +30,6 @@ require_once __DIR__ . '/export_certs.php';
 if (!defined('KAZUHAHUB_RADIUS_SYNC_DIR')) {
     define('KAZUHAHUB_RADIUS_SYNC_DIR', '/var/db/kazuhahub-radius/certsync');
 }
-const KAZUHAHUB_RADIUS_SYNC_NAME = 'radius.kazuha.org';
 const KAZUHAHUB_RADIUS_SYNC_FILES = ['server.pem', 'server.key', 'ca.pem'];
 const KAZUHAHUB_RADIUS_SYNC_MAX_BYTES = 65536;
 const KAZUHAHUB_RADIUS_SYNC_TIMEOUT = 20;
@@ -100,16 +99,19 @@ function kazuhahub_radius_sync_names($certificate, $name)
  * @return array server.pem (leaf, intermediates, authorities), server.key, ca.pem (the first authority)
  * @throws RuntimeException with a message that carries no key or certificate material
  */
-function kazuhahub_radius_sync_verify(array $files, $now = null)
+function kazuhahub_radius_sync_verify(array $files, $now = null, $name = '')
 {
+    if (!is_string($name) || $name === '') {
+        throw new RuntimeException('No expected certificate name is set.');
+    }
     $now = $now === null ? time() : (int)$now;
     $sums = kazuhahub_radius_sync_sums($files['SHA256SUMS'] ?? '');
-    foreach (KAZUHAHUB_RADIUS_SYNC_FILES as $name) {
-        if (!isset($files[$name]) || !is_string($files[$name]) || $files[$name] === '') {
-            throw new RuntimeException("The set has no $name.");
+    foreach (KAZUHAHUB_RADIUS_SYNC_FILES as $file) {
+        if (!isset($files[$file]) || !is_string($files[$file]) || $files[$file] === '') {
+            throw new RuntimeException("The set has no $file.");
         }
-        if (!hash_equals($sums[$name], hash('sha256', $files[$name]))) {
-            throw new RuntimeException("$name does not match SHA256SUMS.");
+        if (!hash_equals($sums[$file], hash('sha256', $files[$file]))) {
+            throw new RuntimeException("$file does not match SHA256SUMS.");
         }
     }
     $certificates = kazuhahub_radius_sync_blocks($files['server.pem'], 'CERTIFICATE');
@@ -133,8 +135,8 @@ function kazuhahub_radius_sync_verify(array $files, $now = null)
     if ((int)($parsed['validFrom_time_t'] ?? PHP_INT_MAX) > $now) {
         throw new RuntimeException('The server certificate is not valid yet.');
     }
-    if (!kazuhahub_radius_sync_names($leaf, KAZUHAHUB_RADIUS_SYNC_NAME)) {
-        throw new RuntimeException('The server certificate does not name ' . KAZUHAHUB_RADIUS_SYNC_NAME . '.');
+    if (!kazuhahub_radius_sync_names($leaf, $name)) {
+        throw new RuntimeException('The server certificate does not name ' . $name . '.');
     }
     foreach (array_merge($intermediates, $authorities) as $pem) {
         $dates = @openssl_x509_parse($pem);
@@ -214,14 +216,14 @@ function kazuhahub_radius_sync_locked($base, $exclusive, callable $work)
  *
  * @return array|null bundle
  */
-function kazuhahub_radius_sync_current($base = KAZUHAHUB_RADIUS_SYNC_DIR, $now = null)
+function kazuhahub_radius_sync_current($name, $base = KAZUHAHUB_RADIUS_SYNC_DIR, $now = null)
 {
     $files = kazuhahub_radius_sync_locked($base, false, fn() => kazuhahub_radius_sync_read("$base/current"));
     if ($files === null) {
         return null;
     }
     try {
-        return kazuhahub_radius_sync_verify($files, $now);
+        return kazuhahub_radius_sync_verify($files, $now, $name);
     } catch (RuntimeException $error) {
         return null;
     }
@@ -234,8 +236,9 @@ function kazuhahub_radius_sync_settings()
     return [
         'service' => ($general['enabled'] ?? '0') === '1',
         'enabled' => ($general['cert_sync'] ?? '1') === '1',
-        'host' => trim((string)($general['cert_sync_host'] ?? '100.88.32.2')),
-        'port' => (int)($general['cert_sync_port'] ?? 11880),
+        'host' => trim((string)($general['cert_sync_host'] ?? '')),
+        'port' => (int)($general['cert_sync_port'] ?? 0),
+        'name' => trim((string)($general['cert_sync_name'] ?? '')),
         'user' => (string)($general['cert_sync_user'] ?? ''),
         'password' => (string)($general['cert_sync_password'] ?? ''),
     ];
@@ -419,7 +422,7 @@ function kazuhahub_radius_sync_mark($path, $content)
  * @param string $base the cache directory
  * @param string $live the directory the daemon reads its certificates from
  * @param int|null $now epoch seconds, for tests
- * @return array state: result (updated, reinstalled, unchanged, failed, skipped, busy, disabled), message, checked
+ * @return array state: result (updated, reinstalled, unchanged, failed, unconfigured, skipped, busy, disabled), message, checked
  */
 function kazuhahub_radius_sync_run(array $settings, callable $fetch, callable $apply, $base = KAZUHAHUB_RADIUS_SYNC_DIR,
     $live = KAZUHAHUB_RADIUS_CERT_DIR, $now = null)
@@ -428,6 +431,9 @@ function kazuhahub_radius_sync_run(array $settings, callable $fetch, callable $a
     $state = fn($result, $message) => ['result' => $result, 'message' => $message, 'checked' => $checked];
     if (empty($settings['service']) || empty($settings['enabled'])) {
         return $state('disabled', 'Certificate sync is off.');
+    }
+    if (($settings['host'] ?? '') === '' || (int)($settings['port'] ?? 0) === 0 || ($settings['name'] ?? '') === '') {
+        return $state('unconfigured', 'No certificate source or expected certificate name is set, so nothing was pulled. Keeping the current set.');
     }
     if (($settings['user'] ?? '') === '' || ($settings['password'] ?? '') === '') {
         return $state('skipped', 'No certificate source account is set, so nothing was pulled. Keeping the current set.');
@@ -473,7 +479,7 @@ function kazuhahub_radius_sync_run(array $settings, callable $fetch, callable $a
             return $state('failed', $error->getMessage() . $keep);
         }
         $current = kazuhahub_radius_sync_read("$base/current");
-        $bundle = kazuhahub_radius_sync_current($base, $checked);
+        $bundle = kazuhahub_radius_sync_current($settings['name'], $base, $checked);
         if ($current !== null && $bundle !== null && $current['SHA256SUMS'] === $files['SHA256SUMS']) {
             if (kazuhahub_radius_sync_installed($bundle, $live) && @file_get_contents($applied) === $current['SHA256SUMS']) {
                 return $state('unchanged', 'The central set is unchanged.');
@@ -503,7 +509,7 @@ function kazuhahub_radius_sync_run(array $settings, callable $fetch, callable $a
             foreach (KAZUHAHUB_RADIUS_SYNC_FILES as $name) {
                 $files[$name] = $fetch($name);
             }
-            $bundle = kazuhahub_radius_sync_verify($files, $checked);
+            $bundle = kazuhahub_radius_sync_verify($files, $checked, $settings['name']);
         } catch (RuntimeException $error) {
             return $state('failed', $error->getMessage() . $keep);
         }
@@ -592,7 +598,7 @@ function kazuhahub_radius_sync_state(array $settings, $base = KAZUHAHUB_RADIUS_S
     $last = is_array($last) ? $last : [];
     $state = [
         'enabled' => !empty($settings['enabled']),
-        'source' => sprintf('%s:%d', $settings['host'] ?? '', (int)($settings['port'] ?? 0)),
+        'source' => ($settings['host'] ?? '') === '' ? '' : sprintf('%s:%d', $settings['host'], (int)($settings['port'] ?? 0)),
         'account' => ($settings['user'] ?? '') !== '' && ($settings['password'] ?? '') !== '',
         'result' => is_string($last['result'] ?? null) ? $last['result'] : 'unknown',
         'message' => is_string($last['message'] ?? null) ? $last['message'] : '',
@@ -600,7 +606,7 @@ function kazuhahub_radius_sync_state(array $settings, $base = KAZUHAHUB_RADIUS_S
         'accepted' => (int)($last['accepted'] ?? 0),
         'in_use' => 'trust store',
     ];
-    $bundle = !empty($settings['enabled']) ? kazuhahub_radius_sync_current($base, $now) : null;
+    $bundle = !empty($settings['enabled']) ? kazuhahub_radius_sync_current((string)($settings['name'] ?? ''), $base, $now) : null;
     if ($bundle !== null && kazuhahub_radius_sync_installed($bundle, $live)) {
         $state['in_use'] = 'central set';
         $state += kazuhahub_radius_sync_dates($bundle);
@@ -632,7 +638,7 @@ if (PHP_SAPI === 'cli' && !defined('KAZUHAHUB_RADIUS_SYNC_NO_MAIN') && realpath(
         };
     }
     $state = kazuhahub_radius_sync_run($settings, $fetch, 'kazuhahub_radius_sync_apply');
-    if ($state['result'] === 'skipped' && !is_dir(KAZUHAHUB_RADIUS_SYNC_DIR)) {
+    if (in_array($state['result'], ['skipped', 'unconfigured'], true) && !is_dir(KAZUHAHUB_RADIUS_SYNC_DIR)) {
         @mkdir(KAZUHAHUB_RADIUS_SYNC_DIR, 0700, true);
     }
     if (!in_array($state['result'], ['disabled', 'busy'], true) && is_dir(KAZUHAHUB_RADIUS_SYNC_DIR)) {
@@ -644,7 +650,7 @@ if (PHP_SAPI === 'cli' && !defined('KAZUHAHUB_RADIUS_SYNC_NO_MAIN') && realpath(
         kazuhahub_radius_sync_log(LOG_NOTICE, sprintf('%s the central set from %s:%d, valid to %s, CA %s',
             $state['result'] === 'updated' ? 'installed' : 'reinstalled', $settings['host'], $settings['port'],
             gmdate('Y-m-d', $state['not_after']), $state['ca_fingerprint']));
-    } elseif ($state['result'] === 'failed' || $state['result'] === 'skipped') {
+    } elseif (in_array($state['result'], ['failed', 'skipped', 'unconfigured'], true)) {
         kazuhahub_radius_sync_log(LOG_WARNING, $state['message']);
     }
     echo json_encode(kazuhahub_radius_sync_state($settings) + ['run' => $state['result'], 'run_message' => $state['message']]) . "\n";

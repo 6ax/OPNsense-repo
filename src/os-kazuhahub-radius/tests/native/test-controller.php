@@ -106,7 +106,7 @@ namespace OPNsense\KazuhaHubRadius {
     /* The model, reduced to the one method the controller calls. */
     class General
     {
-        public static array $targets = ['addresses' => ['lan' => '192.168.0.1'], 'refused' => ['wan' => 'wan']];
+        public static array $targets = ['addresses' => ['lan' => '192.0.2.1'], 'refused' => ['wan' => 'wan']];
 
         public function listenTargetsForSelection()
         {
@@ -204,7 +204,7 @@ namespace {
         'conflicts' => ['os-freeradius is installed.', 'The stock radiusd service is enabled.']]);
     $status = $c->statusAction();
     check($status['status'] === 'running' && $status['widget'] === ['caption_start' => 'Start'], 'The base status was lost.');
-    check($status['listen'] === [['interface' => 'lan', 'address' => '192.168.0.1']], 'The listen addresses are wrong.');
+    check($status['listen'] === [['interface' => 'lan', 'address' => '192.0.2.1']], 'The listen addresses are wrong.');
     check($status['refused'] === ['wan' => 'wan'], 'The refused interfaces are wrong.');
     check($status['conflicts'] === ['os-freeradius is installed.', 'The stock radiusd service is enabled.'], 'The conflicts are wrong.');
     check($status['check'] === ['result' => 'failed', 'message' => "Error: nope\nsecond line", 'checked' => 1790000000], 'The check is wrong.');
@@ -266,7 +266,7 @@ namespace {
 
     /* The central server state. */
     $c = controller('GET');
-    Backend::$replies['kazuhahubradius homeservers'] = '{"status":"ok","servers":[{"address":"10.0.0.1","port":11812,"state":"alive","outstanding":0}]}';
+    Backend::$replies['kazuhahubradius homeservers'] = '{"status":"ok","servers":[{"address":"10.0.0.1","port":1812,"state":"alive","outstanding":0}]}';
     check($c->homeserversAction()['servers'][0]['state'] === 'alive', 'The central server state was lost.');
     Backend::$replies['kazuhahubradius homeservers'] = 'Execute error';
     check(controller('GET')->homeserversAction() === ['status' => 'failed', 'servers' => []], 'A failing backend gave servers.');

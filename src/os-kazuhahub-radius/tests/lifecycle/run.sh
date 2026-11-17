@@ -104,8 +104,8 @@ expect 'the rc script is installed and executable' '[ -x /usr/local/etc/rc.d/kaz
 expect 'the configuration directory is 0750 root:freeradius' \
     "[ \"\$(stat -f '%Lp %Su:%Sg' $CONF)\" = '750 root:freeradius' ]"
 expect 'the service is registered with the firmware plugin list' 'grep -q os-kazuhahub-radius /conf/config.xml'
-expect 'the first load created the default central servers' \
-    "[ \"\$(grep -c '<central ' /conf/config.xml)\" -ge 2 ]"
+expect 'the first load creates no central server: the admin adds them' \
+    "[ \"\$(grep -c '<central ' /conf/config.xml)\" = 0 ]"
 expect 'the generated rc setting is NO before anything is enabled' \
     "grep -qs '^kazuhahub_radiusd_enable=\"NO\"' /etc/rc.conf.d/kazuhahub_radiusd"
 expect 'configd knows the actions' 'configctl kazuhahubradius status | grep -q "not running"'
@@ -232,7 +232,7 @@ server default {
 	listen {
 		type = auth
 		ipaddr = $address
-		port = 11812
+		port = 1814
 	}
 	authorize {
 		Autz-Type Status-Server {
@@ -258,7 +258,7 @@ expect 'the fake central servers have valid configurations' \
 /usr/local/sbin/radiusd -d "$W/central2" -n radiusd
 sleep 1
 expect 'both fake central servers listen on their loopback aliases' \
-    "sockstat -4 -l | grep -q '127.0.0.2:11812' && sockstat -4 -l | grep -q '127.0.0.3:11812'"
+    "sockstat -4 -l | grep -q '127.0.0.2:1814 ' && sockstat -4 -l | grep -q '127.0.0.3:1814 '"
 
 expect 'the settings are enabled through the model' \
     "php '$W/seed.php' settings '$SECRETS' enabled | grep -q '\"saved\"'"
@@ -331,7 +331,7 @@ configctl kazuhahubradius homeservers > "$W/homeservers.json"
 expect 'homeservers reports both central servers from radmin' \
     "grep -q '\"status\":\"ok\"' '$W/homeservers.json' && grep -q '127.0.0.2' '$W/homeservers.json' && grep -q '127.0.0.3' '$W/homeservers.json'"
 expect 'the first central server is alive after serving requests' \
-    "grep -q '\"address\":\"127.0.0.2\",\"port\":11812,\"state\":\"alive\"' '$W/homeservers.json'"
+    "grep -q '\"address\":\"127.0.0.2\",\"port\":1814,\"state\":\"alive\"' '$W/homeservers.json'"
 php "$W/seed.php" status > "$W/status.json"
 expect 'the service controller reports running, the listen address and the last check' \
     "grep -q '\"status\":\"running\"' '$W/status.json' && grep -q '10.0.0.1' '$W/status.json' && grep -q '\"result\":\"ok\"' '$W/status.json'"
@@ -359,14 +359,14 @@ openssl req -x509 -newkey rsa:2048 -nodes -keyout "$CPKI/ca.key" -out "$CPKI/ca.
     -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign >/dev/null 2>&1
 central_leaf() {
     printf 'subjectAltName=%s\nextendedKeyUsage=serverAuth\n' "$2" > "$CPKI/$1.ext"
-    openssl req -newkey "rsa:${3:-2048}" -nodes -keyout "$CPKI/$1.key" -out "$CPKI/$1.csr" -subj '/CN=radius.kazuha.org' >/dev/null 2>&1
+    openssl req -newkey "rsa:${3:-2048}" -nodes -keyout "$CPKI/$1.key" -out "$CPKI/$1.csr" -subj '/CN=radius.example.test' >/dev/null 2>&1
     openssl x509 -req -in "$CPKI/$1.csr" -CA "$CPKI/ca.pem" -CAkey "$CPKI/ca.key" -CAcreateserial \
         -out "$CPKI/$1.pem" -days 3 -extfile "$CPKI/$1.ext" >/dev/null 2>&1
 }
-central_leaf good 'DNS:radius.kazuha.org'
-central_leaf renewed 'DNS:radius.kazuha.org'
+central_leaf good 'DNS:radius.example.test'
+central_leaf renewed 'DNS:radius.example.test'
 # Passes every check of the sync, but radiusd refuses a key this small: the rollback case.
-central_leaf weak 'DNS:radius.kazuha.org' 512
+central_leaf weak 'DNS:radius.example.test' 512
 central_leaf wrongname 'DNS:radius.example.invalid'
 # publish LEAF [corrupt]: the set the fake central node serves, with sums as sha256sum writes them.
 publish() {
@@ -397,16 +397,16 @@ readfile(getenv('NODE_DIST') . '/' . $name);
 return true;
 NODEEOF
 start_node() {
-    NODE_SECRETS="$SECRETS" NODE_DIST="$DIST" php -S 127.0.0.4:11880 "$W/node.php" >/dev/null 2>&1 &
+    NODE_SECRETS="$SECRETS" NODE_DIST="$DIST" php -S 127.0.0.4:8080 "$W/node.php" >/dev/null 2>&1 &
     SOURCE_PID=$!
     sleep 1
 }
 ifconfig lo0 alias 127.0.0.4/32
 start_node
 refuse 'the model refuses a source host that is not a host name or address' \
-    "php '$W/seed.php' certsync 'not a host!' 11880 on"
+    "php '$W/seed.php' certsync 'not a host!' 8080 on"
 refuse 'the model refuses a source port out of range' "php '$W/seed.php' certsync 127.0.0.4 70000 on"
-expect 'the sync source is saved through the model, without an account first' "php '$W/seed.php' certsync 127.0.0.4 11880 on | grep -q '\"saved\"'"
+expect 'the sync source is saved through the model, without an account first' "php '$W/seed.php' certsync 127.0.0.4 8080 on | grep -q '\"saved\"'"
 radius_pid() { cat /var/run/kazuhahub-radius/radiusd.pid 2>/dev/null; }
 PID_BEFORE="$(radius_pid)"
 configctl kazuhahubradius certsync > "$W/sync0.json"
@@ -414,12 +414,12 @@ expect 'without an account nothing is pulled and the service is left alone' \
     "grep -q '\"run\":\"skipped\"' '$W/sync0.json' && [ ! -d /var/db/kazuhahub-radius/certsync/current ] && [ \"\$(radius_pid)\" = '$PID_BEFORE' ]"
 cp "$SECRETS/sync-password" "$SECRETS/sync-password.real"
 openssl rand -hex 16 > "$SECRETS/sync-password"
-php "$W/seed.php" certsync 127.0.0.4 11880 on "$SECRETS" >/dev/null
+php "$W/seed.php" certsync 127.0.0.4 8080 on "$SECRETS" >/dev/null
 mv "$SECRETS/sync-password.real" "$SECRETS/sync-password"
 configctl kazuhahubradius certsync > "$W/sync01.json"
 expect 'a refused account (HTTP 401) keeps the current set' \
     "grep -q 'HTTP 401' '$W/sync01.json' && [ ! -d /var/db/kazuhahub-radius/certsync/current ] && [ \"\$(radius_pid)\" = '$PID_BEFORE' ]"
-expect 'the account is saved through the model' "php '$W/seed.php' certsync 127.0.0.4 11880 on '$SECRETS' | grep -q '\"saved\"'"
+expect 'the account is saved through the model' "php '$W/seed.php' certsync 127.0.0.4 8080 on '$SECRETS' | grep -q '\"saved\"'"
 configctl kazuhahubradius certsync > "$W/sync1.json"
 sleep 2
 expect 'the first sync installs the central set' \
@@ -444,7 +444,7 @@ expect 'an unchanged set is left alone and the service is not restarted' \
 publish wrongname
 configctl kazuhahubradius certsync > "$W/sync3.json"
 expect 'a set for another name is refused and the service keeps running on the current one' \
-    "grep -q '\"result\":\"failed\"' '$W/sync3.json' && grep -q 'radius.kazuha.org' '$W/sync3.json' && [ \"\$(radius_pid)\" = '$PID_SYNCED' ] && [ \"\$(sha256 -q $CONF/certs/server.pem)\" = '$CERT_SYNCED' ]"
+    "grep -q '\"result\":\"failed\"' '$W/sync3.json' && grep -q 'radius.example.test' '$W/sync3.json' && [ \"\$(radius_pid)\" = '$PID_SYNCED' ] && [ \"\$(sha256 -q $CONF/certs/server.pem)\" = '$CERT_SYNCED' ]"
 # A renewed set whose key was changed after the sums were written.
 publish renewed corrupt
 configctl kazuhahubradius certsync > "$W/sync4.json"
@@ -468,26 +468,26 @@ expect 'every refusal was logged, without key material or the password' \
 expect 'the sync output carries no key material and no password' "! grep -q -F -e 'BEGIN' -e 'PRIVATE' -e \"\$(cat '$SECRETS/sync-password')\" '$W'/sync*.json"
 sockstat -4 -l | awk -v pid="$(radius_pid)" '$3 == pid {print $6}' | sort > "$W/sockets-synced.txt"
 expect 'the sync opened nothing new: the same three sockets' \
-    "[ \"\$(wc -l < '$W/sockets-synced.txt' | tr -d ' ')\" = 3 ] && grep -q '^10\\.0\\.0\\.1:1812\$' '$W/sockets-synced.txt' && ! sockstat -4 -l | grep -q ':11880 '"
+    "[ \"\$(wc -l < '$W/sockets-synced.txt' | tr -d ' ')\" = 3 ] && grep -q '^10\\.0\\.0\\.1:1812\$' '$W/sockets-synced.txt' && ! sockstat -4 -l | grep -q ':8080 '"
 php "$W/seed.php" status > "$W/status-synced.json"
 expect 'the service controller never hands the sync password out' "! grep -q -F \"\$(cat '$SECRETS/sync-password')\" '$W/status-synced.json'"
 expect 'the service controller reports the central set in use' \
-    "grep -q '\"in_use\":\"central set\"' '$W/status-synced.json' && grep -q '127.0.0.4:11880' '$W/status-synced.json'"
+    "grep -q '\"in_use\":\"central set\"' '$W/status-synced.json' && grep -q '127.0.0.4:8080' '$W/status-synced.json'"
 expect 'with the sync off the restart falls back to the trust store' \
-    "php '$W/seed.php' certsync 127.0.0.4 11880 off | grep -q '\"saved\"' && [ \"\$(configctl kazuhahubradius restart)\" = OK ] && sleep 2 && openssl x509 -in $CONF/certs/server.pem -noout -issuer | grep -q 'Lifecycle Test CA' && run_eapol '$W/accept.conf' && grep -q '^SUCCESS' '$W/eapol.out'"
+    "php '$W/seed.php' certsync 127.0.0.4 8080 off | grep -q '\"saved\"' && [ \"\$(configctl kazuhahubradius restart)\" = OK ] && sleep 2 && openssl x509 -in $CONF/certs/server.pem -noout -issuer | grep -q 'Lifecycle Test CA' && run_eapol '$W/accept.conf' && grep -q '^SUCCESS' '$W/eapol.out'"
 expect 'a sync that is off does nothing' \
     "configctl kazuhahubradius certsync | grep -q '\"enabled\":false'"
 # Back on, with the daemon still on the trust store set: the next run notices and installs the accepted set again.
 start_node
 publish good
-php "$W/seed.php" certsync 127.0.0.4 11880 on >/dev/null
+php "$W/seed.php" certsync 127.0.0.4 8080 on >/dev/null
 configctl kazuhahubradius certsync > "$W/sync6.json"
 sleep 2
 expect 'a daemon left on the trust store set gets the accepted central set again' \
     "grep -q '\"run\":\"reinstalled\"' '$W/sync6.json' && openssl x509 -in $CONF/certs/server.pem -noout -issuer | grep -q 'Lifecycle Central CA' && run_eapol '$W/accept-central.conf' && grep -q '^SUCCESS' '$W/eapol.out'"
 kill "$SOURCE_PID" 2>/dev/null
 wait "$SOURCE_PID" 2>/dev/null
-php "$W/seed.php" certsync 127.0.0.4 11880 off >/dev/null
+php "$W/seed.php" certsync 127.0.0.4 8080 off >/dev/null
 configctl kazuhahubradius restart >/dev/null
 sleep 2
 ifconfig lo0 -alias 127.0.0.4
@@ -504,7 +504,7 @@ done
 if [ "$FAILOVER" = 1 ]; then pass 'fail-over: with the first central server stopped, the second one accepts' "attempt $attempt"; else fail 'fail-over: with the first central server stopped, the second one accepts'; fi
 configctl kazuhahubradius homeservers > "$W/homeservers-failover.json"
 expect 'fail-over: the stopped central server is reported zombie or dead, the second alive' \
-    "grep -q -E '\"address\":\"127.0.0.2\",\"port\":11812,\"state\":\"(zombie|dead)\"' '$W/homeservers-failover.json' && grep -q '\"address\":\"127.0.0.3\",\"port\":11812,\"state\":\"alive\"' '$W/homeservers-failover.json'"
+    "grep -q -E '\"address\":\"127.0.0.2\",\"port\":1814,\"state\":\"(zombie|dead)\"' '$W/homeservers-failover.json' && grep -q '\"address\":\"127.0.0.3\",\"port\":1814,\"state\":\"alive\"' '$W/homeservers-failover.json'"
 
 # --- stop, restart, stop -------------------------------------------------------
 expect 'the service stops through configd' "[ \"\$(configctl kazuhahubradius stop)\" = OK ]"

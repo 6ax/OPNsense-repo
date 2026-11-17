@@ -1,10 +1,10 @@
 # Kazuha Hub RADIUS for OPNsense
 
-`os-kazuhahub-radius` is the RADIUS proxy for the Irvine site's "Kazuha Hub"
+`os-kazuhahub-radius` is the RADIUS proxy for a site's "Kazuha Hub"
 WPA2/WPA3-Enterprise Wi-Fi. It terminates the EAP-TTLS the access points send,
 completes TLS with a server certificate from the OPNsense trust store, and
 forwards the tunneled PAP request to the central RADIUS servers in a fail-over
-order. It replaces the FreeRADIUS container that ran on the NAS.
+order.
 
 | | |
 | --- | --- |
@@ -44,11 +44,12 @@ install hook accepts FreeBSD 14, 15 and 16 on amd64 only.
 | Enable | off | Nothing runs while off. Before enabling, the certificates and every secret must be set. |
 | Listen interfaces | `lan` | Enabled interfaces with a static IPv4 address only. |
 | Server certificate / Certificate authority | empty | From **System > Trust**; the private key must be stored on this firewall. |
-| Access point networks | the LAN subnet | IPv4 networks the access points live in (Irvine: `192.168.0.0/22`); one client per network. |
+| Access point networks | the LAN subnet | IPv4 networks the access points live in (for example `192.0.2.0/24`); one client per network. |
 | Access point secret | empty | The shared secret between the access points and this service. |
-| Central servers | Production `100.88.32.2:11812`, 4c6g `100.88.33.1:11812` (offered disabled, without secrets) | Address, port, secret and order; lower sequence first. |
+| Central servers | none | Added by the admin, typically a primary central and a backup central: address, port (1812 by default), secret and order; lower sequence first. |
 | Sync certificates from the central node | on | See below. |
-| Certificate source host / port | `100.88.32.2` / `11880` | The central node that serves the certificate set on the tailnet. |
+| Certificate source host / port | empty | The central node that serves the certificate set on a private network; nothing is pulled while it is empty. |
+| Expected certificate name | empty | The DNS name the central server certificate must carry; nothing is pulled while it is empty. |
 | Certificate source user / password | empty | This site's HTTP Basic account on the central node; the password is stored like the other secrets and never shown again. While either is empty nothing is pulled. |
 
 **Secrets are never shown again.** Like every OPNsense secret they live in
@@ -62,15 +63,16 @@ from letters, digits and `! # & ( ) * + , - . / : ; < = > ? @ [ ] ^ _ { | } ~`.
 Renewals and CA changes are made on the central node only. Every 6 hours (cron,
 through the configd action `kazuhahubradius certsync`, also on install and with
 **Sync now** on the page) the plugin fetches `SHA256SUMS` from
-`http://<host>:<port>/` with this site's HTTP Basic account (without one it
-pulls nothing and logs that; a 401 is a failure like any other). Only when it differs from the accepted set does it
+`http://<host>:<port>/` with this site's HTTP Basic account. Without a source
+host, an expected certificate name or an account it pulls nothing and logs that;
+a 401 is a failure like any other. Only when it differs from the accepted set does it
 fetch `server.pem`, `server.key` and `ca.pem`, and the set is accepted only if
 all of these hold:
 
 - every file matches its line in `SHA256SUMS`, which lists exactly those three;
 - the certificate chains to the fetched `ca.pem` (`openssl verify`);
 - it is valid now, and so is the authority;
-- its subjectAltName holds `DNS:radius.kazuha.org`;
+- its subjectAltName holds `DNS:<expected certificate name>`;
 - the key belongs to the certificate.
 
 The set is then kept in `/var/db/kazuhahub-radius/certsync/current` (0700, files
@@ -89,8 +91,8 @@ has been accepted and whenever none is valid, so the service never ends up
 without certificates.
 
 The request is plain HTTP, without a proxy or redirects, and limited in size and
-time. It is meant for the tailnet, where WireGuard authenticates this firewall's
-source address and the central node allow-lists it. Nothing new listens.
+time. It is meant for a private network between the sites and the central node,
+never for the internet. Nothing new listens.
 
 ## Never on the WAN
 

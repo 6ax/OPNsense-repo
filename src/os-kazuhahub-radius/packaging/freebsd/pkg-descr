@@ -1,4 +1,4 @@
-Kazuha Hub RADIUS for OPNsense is the Irvine site's RADIUS proxy for the
+Kazuha Hub RADIUS for OPNsense is a site's RADIUS proxy for the
 WPA2/WPA3-Enterprise Wi-Fi. It terminates EAP-TTLS from the access points with a
 server certificate from the OPNsense trust store and forwards the tunneled PAP
 request to the central RADIUS servers, in a fail-over order, over a shared

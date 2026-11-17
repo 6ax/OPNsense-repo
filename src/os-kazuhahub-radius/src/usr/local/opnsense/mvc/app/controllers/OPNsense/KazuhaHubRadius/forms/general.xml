@@ -29,7 +29,7 @@
         <type>select_multiple</type>
         <style>tokenize</style>
         <allownew>true</allownew>
-        <help>IPv4 networks or addresses the access points send requests from, for example 192.168.0.0/22.</help>
+        <help>IPv4 networks or addresses the access points send requests from, for example 192.0.2.0/24.</help>
     </field>
     <field>
         <id>general.client_secret</id>
@@ -41,18 +41,24 @@
         <id>general.cert_sync</id>
         <label>Sync certificates from the central node</label>
         <type>checkbox</type>
-        <help>Every 6 hours, fetch the server certificate, its key and the authority from the central node, and use them when they changed and pass every check: the sums match, the certificate chains to the authority, is valid now, names radius.kazuha.org and matches the key. The service is then restarted. On any failure the current set stays in use. The certificate selected above is used until a central set has been accepted, and whenever none is valid. Only outbound requests are made; nothing new listens.</help>
+        <help>Every 6 hours, fetch the server certificate, its key and the authority from the central node, and use them when they changed and pass every check: the sums match, the certificate chains to the authority, is valid now, carries the expected name and matches the key. The service is then restarted. On any failure the current set stays in use. The certificate selected above is used until a central set has been accepted, and whenever none is valid. Only outbound requests are made; nothing new listens.</help>
     </field>
     <field>
         <id>general.cert_sync_host</id>
         <label>Certificate source host</label>
         <type>text</type>
-        <help>The central node that serves the set over plain HTTP on the tailnet, where WireGuard authenticates this firewall's address.</help>
+        <help>The central node that serves the set over plain HTTP on a private network. While it is empty, nothing is pulled.</help>
     </field>
     <field>
         <id>general.cert_sync_port</id>
         <label>Certificate source port</label>
         <type>text</type>
+    </field>
+    <field>
+        <id>general.cert_sync_name</id>
+        <label>Expected certificate name</label>
+        <type>text</type>
+        <help>The DNS name the central server certificate must carry in its subjectAltName. While it is empty, nothing is pulled.</help>
     </field>
     <field>
         <id>general.cert_sync_user</id>

@@ -161,7 +161,7 @@ function kazuhahub_radius_main()
     /* The set synced from the central node wins while it is valid; the trust store is the fallback. */
     if (($general['cert_sync'] ?? '1') === '1') {
         require_once __DIR__ . '/certsync.php';
-        $synced = kazuhahub_radius_sync_current();
+        $synced = kazuhahub_radius_sync_current(trim((string)($general['cert_sync_name'] ?? '')));
         if ($synced !== null) {
             return ['central set', kazuhahub_radius_install(KAZUHAHUB_RADIUS_CERT_DIR, $synced, $group)];
         }

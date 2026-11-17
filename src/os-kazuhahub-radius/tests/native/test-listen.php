@@ -59,24 +59,24 @@ namespace {
 
     /* The reason an interface is refused, or null when the listener may live there. */
     $cases = [
-        ['lan', facts('192.168.0.1'), null],
+        ['lan', facts('192.0.2.1'), null],
         ['opt1', facts('10.9.0.1'), null],
         ['opt20', facts('172.16.5.1'), null],
-        ['lan', facts('192.168.0.1', ['gateway' => '  ']), null],             /* blank is no gateway */
+        ['lan', facts('192.0.2.1', ['gateway' => '  ']), null],             /* blank is no gateway */
         ['wan', facts('203.0.113.9'), 'wan'],                                  /* the key alone decides */
-        ['wan', facts('192.168.0.1'), 'wan'],
+        ['wan', facts('192.0.2.1'), 'wan'],
         ['wan', null, 'wan'],
         ['lan', null, 'missing'],
-        ['lan', facts('192.168.0.1', ['enable' => false]), 'disabled'],
+        ['lan', facts('192.0.2.1', ['enable' => false]), 'disabled'],
         ['lan', facts('dhcp'), 'not-static'],
         ['lan', facts('pppoe'), 'not-static'],
         ['lan', facts('pptp'), 'not-static'],
         ['lan', facts('l2tp'), 'not-static'],
         ['lan', facts(''), 'not-static'],
-        ['lan', facts('192.168.0'), 'not-static'],
-        ['lan', facts('192.168.0.256'), 'not-static'],
+        ['lan', facts('192.0.2'), 'not-static'],
+        ['lan', facts('192.0.2.256'), 'not-static'],
         ['lan', facts('fe80::1'), 'not-static'],
-        ['lan', facts('192.168.0.1/24'), 'not-static'],
+        ['lan', facts('192.0.2.1/24'), 'not-static'],
         ['lan', facts('0.0.0.0'), 'not-unicast'],
         ['lan', facts('127.0.0.1'), 'not-unicast'],
         ['lan', facts('224.0.0.1'), 'not-unicast'],
@@ -111,7 +111,7 @@ namespace {
 
     /* A selection splits into addresses and refusals, once per name, in the order given. */
     $interfaces = [
-        'lan' => facts('192.168.0.1'),
+        'lan' => facts('192.0.2.1'),
         'opt1' => facts('10.1.0.1'),
         'opt2' => facts('198.51.100.2', ['gateway' => 'GW']),
         'opt3' => facts('dhcp'),
@@ -119,7 +119,7 @@ namespace {
     $lookup = fn($name) => $interfaces[$name] ?? null;
     $result = General::listenTargets(['lan', 'wan', 'opt1', 'lan', 'opt2', 'opt3', 'opt9', 'wan'], $lookup);
     check($result === [
-        'addresses' => ['lan' => '192.168.0.1', 'opt1' => '10.1.0.1'],
+        'addresses' => ['lan' => '192.0.2.1', 'opt1' => '10.1.0.1'],
         'refused' => ['wan' => 'wan', 'opt2' => 'gateway', 'opt3' => 'not-static', 'opt9' => 'missing'],
     ], 'The selection was split wrongly: ' . json_encode($result));
     check(General::listenTargets([], $lookup) === ['addresses' => [], 'refused' => []], 'An empty selection is not empty.');
@@ -155,7 +155,7 @@ namespace {
     }
 
     /* The first-run migration offers the network the LAN address belongs to. */
-    foreach ([['192.168.0.1', '22', '192.168.0.0/22'], ['192.168.1.77', '24', '192.168.1.0/24'], ['10.20.30.40', '8', '10.0.0.0/8'],
+    foreach ([['192.0.2.1', '24', '192.0.2.0/24'], ['192.0.2.77', '22', '192.0.0.0/22'], ['198.51.100.77', '24', '198.51.100.0/24'], ['10.20.30.40', '8', '10.0.0.0/8'],
         ['172.16.5.9', '30', '172.16.5.8/30'], ['10.0.0.1', '31', null], ['10.0.0.1', '7', null], ['dhcp', '24', null],
         ['10.0.0.1', '', null], ['10.0.0.1', 'x', null], ['', '24', null]] as [$address, $prefix, $expected]) {
         check(M1_0_0::networkOf($address, $prefix) === $expected, "networkOf($address, $prefix)");

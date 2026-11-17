@@ -119,6 +119,7 @@ $(function () {
         unchanged: ["{{ lang._('Unchanged') }}", 'label-success'],
         failed: ["{{ lang._('Failed') }}", 'label-danger'],
         skipped: ["{{ lang._('Skipped: no account') }}", 'label-warning'],
+        unconfigured: ["{{ lang._('Skipped: no source or name') }}", 'label-warning'],
         disabled: ["{{ lang._('Off') }}", 'label-default'],
         unknown: ["{{ lang._('Not run yet') }}", 'label-default']
     };
@@ -191,12 +192,12 @@ $(function () {
             return;
         }
         const label = syncLabels[sync.result] || syncLabels.unknown;
-        detail.append(document.createTextNode("{{ lang._('Last sync from') }} " + (sync.source || '') + ': '))
+        detail.append(document.createTextNode(sync.source ? "{{ lang._('Last sync from') }} " + sync.source + ': ' : "{{ lang._('Last sync') }}: "))
             .append($('<span class="label label-opnsense"/>').addClass(label[1]).text(label[0]));
         if (sync.checked) {
             detail.append(document.createTextNode(' ' + new Date(sync.checked * 1000).toLocaleString()));
         }
-        if ((sync.result === 'failed' || sync.result === 'skipped') && sync.message) {
+        if (['failed', 'skipped', 'unconfigured'].indexOf(sync.result) >= 0 && sync.message) {
             detail.append($('<div/>').text(htmlDecode(sync.message)));
         }
     }

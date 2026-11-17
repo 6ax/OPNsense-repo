@@ -1,9 +1,8 @@
 # Kazuha Hub RADIUS for OPNsense
 
-`os-kazuhahub-radius` 是 Irvine 站点 “Kazuha Hub” WPA2/WPA3-Enterprise Wi-Fi 的 RADIUS
+`os-kazuhahub-radius` 是站点上 “Kazuha Hub” WPA2/WPA3-Enterprise Wi-Fi 的 RADIUS
 代理。它在防火墙上终结接入点发来的 EAP-TTLS，用 OPNsense 信任库里的服务器证书
-完成 TLS，再把隧道内的 PAP 请求按故障转移顺序转发给中心 RADIUS 服务器。它取代原来
-跑在 NAS 上的 FreeRADIUS 容器。
+完成 TLS，再把隧道内的 PAP 请求按故障转移顺序转发给中心 RADIUS 服务器。
 
 | | |
 | --- | --- |
@@ -37,11 +36,12 @@
 | Enable | 关 | 关闭时不运行任何进程。启用前必须填齐证书、密钥和全部密钥串。 |
 | Listen interfaces | `lan` | 只能选已启用、静态 IPv4 的接口。 |
 | Server certificate / Certificate authority | 空 | 来自 **系统 > 信任**；私钥必须保存在本机。 |
-| Access point networks | LAN 子网 | 接入点所在的 IPv4 网络（Irvine 是 `192.168.0.0/22`），每个网络生成一个客户端。 |
+| Access point networks | LAN 子网 | 接入点所在的 IPv4 网络（例如 `192.0.2.0/24`），每个网络生成一个客户端。 |
 | Access point secret | 空 | 接入点与本服务共用的密钥串。 |
-| Central servers | Production `100.88.32.2:11812`，4c6g `100.88.33.1:11812`（默认禁用，无密钥串） | 地址、端口、密钥串、顺序；序号小的优先。 |
+| Central servers | 无 | 由管理员添加，通常一台主中心、一台备用中心：地址、端口（默认 1812）、密钥串、顺序；序号小的优先。 |
 | Sync certificates from the central node | 开 | 见下节。 |
-| Certificate source host / port | `100.88.32.2` / `11880` | 在 tailnet 上分发证书集的中心节点。 |
+| Certificate source host / port | 空 | 在私有网络上分发证书集的中心节点；未填写时不拉取。 |
+| Expected certificate name | 空 | 中心服务器证书必须带的 DNS 名；未填写时不拉取。 |
 | Certificate source user / password | 空 | 本站点在中心节点上的 HTTP Basic 账号；密码像其他密钥串一样保存、从不回显。任一为空时不拉取。 |
 
 **密钥串从不回显。** 它们像 OPNsense 的其他密钥一样保存在 `config.xml`，API 永远不返回
@@ -53,14 +53,14 @@ configd 输出、状态页或测试输出。密钥串长 8 到 128 个字符，�
 
 续期和换 CA 只在中心节点上做。插件每 6 小时（cron 调用 configd 动作
 `kazuhahubradius certsync`；安装时和页面上的 **Sync now** 也会触发）从
-`http://<host>:<port>/` 拉取 `SHA256SUMS`，使用本站点的 HTTP Basic 账号（没有账号就不拉取并记日志；
-401 与其他失败一样处理）。只有它与已接受的证书集不同时，才拉取
+`http://<host>:<port>/` 拉取 `SHA256SUMS`，使用本站点的 HTTP Basic 账号（没填来源主机、预期证书名或账号时
+不拉取并记日志；401 与其他失败一样处理）。只有它与已接受的证书集不同时，才拉取
 `server.pem`、`server.key` 和 `ca.pem`，并且以下各项全部通过才接受：
 
 - 每个文件都与 `SHA256SUMS` 中对应的行一致，且 `SHA256SUMS` 恰好列出这三个文件；
 - 证书能链到拉取到的 `ca.pem`（`openssl verify`）；
 - 证书和 CA 当前都在有效期内；
-- subjectAltName 含 `DNS:radius.kazuha.org`；
+- subjectAltName 含 `DNS:<预期证书名>`；
 - 私钥与证书匹配。
 
 接受后，证书集保存在 `/var/db/kazuhahub-radius/certsync/current`（目录 0700，文件 0600），
@@ -72,8 +72,8 @@ configd 输出、状态页或测试输出。密钥串长 8 到 128 个字符，�
 或上一轮中途被打断），会重新安装。信任库中选定的证书始终是后备：在接受第一个中心
 证书集之前、以及没有有效中心证书集时都用它，所以服务不会落到没有证书的状态。
 
-请求是纯 HTTP，不走代理、不跟随重定向，并限制大小和时间。它只用于 tailnet：WireGuard
-认证本机的源地址，中心节点按地址放行。不会新增任何监听。
+请求是纯 HTTP，不走代理、不跟随重定向，并限制大小和时间。它只用于站点与中心节点之间的私有网络，
+绝不用于公网。不会新增任何监听。
 
 ## 绝不监听 WAN
 

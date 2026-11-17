@@ -34,7 +34,7 @@
             <AddressFamily>ipv4</AddressFamily>
             <WildcardEnabled>N</WildcardEnabled>
             <Strict>Y</Strict>
-            <ValidationMessage>Enter IPv4 networks such as 192.168.0.0/22, without host bits, or single addresses.</ValidationMessage>
+            <ValidationMessage>Enter IPv4 networks such as 192.0.2.0/24, without host bits, or single addresses.</ValidationMessage>
         </client_networks>
         <client_secret type="UpdateOnlyTextField">
             <Mask>/^[A-Za-z0-9!#&amp;()*+,.\/:;&lt;=&gt;?@^_{}|~\[\]-]{8,128}$/D</Mask>
@@ -45,18 +45,21 @@
             <Required>Y</Required>
         </cert_sync>
         <cert_sync_host type="HostnameField">
-            <Default>100.88.32.2</Default>
-            <Required>Y</Required>
+            <Required>N</Required>
             <IpAllowed>Y</IpAllowed>
             <ValidationMessage>Enter the IP address or host name of the central certificate source.</ValidationMessage>
         </cert_sync_host>
         <cert_sync_port type="IntegerField">
-            <Default>11880</Default>
-            <Required>Y</Required>
+            <Required>N</Required>
             <MinimumValue>1</MinimumValue>
             <MaximumValue>65535</MaximumValue>
             <ValidationMessage>Enter a port between 1 and 65535.</ValidationMessage>
         </cert_sync_port>
+        <cert_sync_name type="HostnameField">
+            <Required>N</Required>
+            <IpAllowed>N</IpAllowed>
+            <ValidationMessage>Enter the host name the central certificate must carry, such as radius.example.com.</ValidationMessage>
+        </cert_sync_name>
         <cert_sync_user type="TextField">
             <Mask>/^[A-Za-z0-9._@-]{1,64}$/D</Mask>
             <ValidationMessage>Use 1 to 64 letters, digits and . _ @ -</ValidationMessage>
@@ -89,7 +92,7 @@
                     </Constraints>
                 </address>
                 <port type="IntegerField">
-                    <Default>11812</Default>
+                    <Default>1812</Default>
                     <Required>Y</Required>
                     <MinimumValue>1</MinimumValue>
                     <MaximumValue>65535</MaximumValue>

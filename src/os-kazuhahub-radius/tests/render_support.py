@@ -106,12 +106,12 @@ def interface(address=None, subnet='24', enable='1', **extra):
     return node
 
 
-def configuration(enabled='1', interfaces='lan', networks='192.168.0.0/22', centrals=2, client_secret=CLIENT_SECRET,
+def configuration(enabled='1', interfaces='lan', networks='192.0.2.0/24', centrals=2, client_secret=CLIENT_SECRET,
                   extra_interfaces=None, general=None, central_rows=None):
-    """A complete configuration with the Irvine defaults."""
+    """A complete configuration: two central servers, one LAN."""
     rows = central_rows
     if rows is None:
-        seeds = [('Production', '100.88.32.2', '11812', '10'), ('4c6g', '100.88.33.1', '11812', '20')]
+        seeds = [('primary', '198.51.100.10', '1814', '10'), ('backup', '198.51.100.11', '1814', '20')]
         rows = [{'enabled': '1', 'description': name, 'address': address, 'port': port, 'sequence': sequence,
                  'secret': CENTRAL_SECRETS[index]}
                 for index, (name, address, port, sequence) in enumerate(seeds[:centrals])]
@@ -120,6 +120,6 @@ def configuration(enabled='1', interfaces='lan', networks='192.168.0.0/22', cent
             'centrals': {'central': rows[0] if len(rows) == 1 else rows} if rows else {'central': []}}
     node.update(general or {})
     config_interfaces = {'wan': interface('203.0.113.9', '28', gateway='WAN_GW', blockpriv='1', blockbogons='1'),
-                         'lan': interface('192.168.0.1', '22')}
+                         'lan': interface('192.0.2.1', '24')}
     config_interfaces.update(extra_interfaces or {})
     return {'OPNsense': {'kazuhahubradius': {'general': node}}, 'interfaces': config_interfaces}
