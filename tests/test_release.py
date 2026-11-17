@@ -355,3 +355,31 @@ class CatalogMembershipTests(ReleaseFixture):
                               'abi': entry['abi'], 'sum': '0' * 64}).encode()
         with self.assertRaisesRegex(ValueError, 'Package digest verification failed'):
             self.checked_site(report, catalog)
+
+    def test_pkg_28_catalog_sums_are_blake2b_in_z_base32(self):
+        # pkg 2.8, as shipped with OPNsense 26.7, writes "2$" + z-base32(BLAKE2b-512)
+        # for each package sum instead of a plain SHA256 hex digest.
+        report, repository = self.site_report()
+        entry = report['packages'][0]
+        content = (self.site / entry['path']).read_bytes()
+        modern = '2$' + verify.zbase32(hashlib.blake2b(content).digest())
+        catalog = json.dumps({'path': 'All/' + Path(entry['path']).name,
+                              'abi': entry['abi'], 'sum': modern}).encode()
+        self.assertEqual(report, self.checked_site(report, catalog))
+        for wrong in ('2$' + verify.zbase32(hashlib.blake2b(b'other').digest()),
+                      '3$' + entry['sha256'], entry['sha256'].upper(), None):
+            catalog = json.dumps({'path': 'All/' + Path(entry['path']).name,
+                                  'abi': entry['abi'], 'sum': wrong}).encode()
+            with self.assertRaisesRegex(ValueError, 'Package digest verification failed'):
+                self.checked_site(report, catalog)
+
+    def test_package_sum_encoding_matches_a_real_pkg_28_catalog(self):
+        # os-pftop-1.1.1.pkg as listed by a catalog that pkg 2.8.4 signed on OPNsense 26.7.7.
+        blake2b = bytes.fromhex('25d85121b718001a3e0abf3c9a45b349f4b4dbece1d1b071595bde4890eb015f'
+                                '579df66b08592834df7d9621d1cc6f7d2f05809f993af184bce89d5e885153e8')
+        self.assertEqual('fbsdiohsayywb9eb9fxw3npsjn7j5pu7bxwb5afm51ztreq7bazqiq46mdn1fwog9q9c3or4c654zzwyyh8uj7r6rrxt6q4mecwgfwd',
+                         verify.zbase32(blake2b))
+        content = b'catalog fixture'
+        self.assertTrue(verify.package_sum_matches(hashlib.sha256(content).hexdigest(), content))
+        self.assertTrue(verify.package_sum_matches('2$' + verify.zbase32(hashlib.blake2b(content).digest()), content))
+        self.assertFalse(verify.package_sum_matches(hashlib.sha256(b'other').hexdigest(), content))
