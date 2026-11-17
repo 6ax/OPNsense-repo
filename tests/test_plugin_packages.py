@@ -98,6 +98,8 @@ BUILDS = {
     'os-wanguard': {'abi': WILDCARD, 'copy': [('src', '/')],
                     'deps': {'python313': {'origin': 'lang/python313', 'version': '>=0'}}},
     'os-kazuhahub-radius': {'abi': WILDCARD, 'copy': [('src', '/')],
+                            'deps': {'os-kazuhahub-wifi-proxy': {'origin': 'opnsense/os-kazuhahub-wifi-proxy', 'version': '1.1.0'}}},
+    'os-kazuhahub-wifi-proxy': {'abi': WILDCARD, 'copy': [('src', '/')],
                             'deps': {'freeradius3': {'origin': 'net/freeradius3', 'version': '>=0'}}},
     'os-ttyd': {'abi': NATIVE, 'copy': [('src', '/')],
                 'shared_copy': [('src/common/config_backup.py', '/usr/local/opnsense/scripts/ttyd/config_backup.py'),

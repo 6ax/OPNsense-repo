@@ -1,8 +1,7 @@
-Kazuha Hub RADIUS for OPNsense is the Irvine site's RADIUS proxy for the
-WPA2/WPA3-Enterprise Wi-Fi. It terminates EAP-TTLS from the access points with a
-server certificate from the OPNsense trust store and forwards the tunneled PAP
-request to the central RADIUS servers, in a fail-over order, over a shared
-secret. It runs the FreeRADIUS daemon of the freeradius3 package with its own
-configuration directory, listens on the static IPv4 address of the selected local
-interfaces only and never on the WAN, and cannot be installed next to
-os-freeradius.
+Transitional package for the renamed Kazuha Hub Wi-Fi proxy.
+
+The site-side Wi-Fi authentication proxy is now os-kazuhahub-wifi-proxy, which
+this package depends on so that an ordinary firmware update installs it. The
+new package takes over the saved settings unchanged; this one removes what the
+former service left behind and starts the renamed service. It can be removed
+once the router runs os-kazuhahub-wifi-proxy.

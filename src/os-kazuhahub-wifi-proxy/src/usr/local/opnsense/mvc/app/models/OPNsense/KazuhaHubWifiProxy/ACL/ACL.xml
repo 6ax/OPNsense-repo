@@ -1,0 +1,9 @@
+<acl>
+    <page-services-kazuhahubwifiproxy>
+        <name>Services: Kazuha Hub Wi-Fi Proxy</name>
+        <patterns>
+            <pattern>ui/kazuhahubwifiproxy/*</pattern>
+            <pattern>api/kazuhahubwifiproxy/*</pattern>
+        </patterns>
+    </page-services-kazuhahubwifiproxy>
+</acl>

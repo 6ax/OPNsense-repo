@@ -1,0 +1,105 @@
+#!/bin/sh
+
+# PROVIDE: kazuhahub_wifiproxy
+# REQUIRE: NETWORKING configd
+# KEYWORD: shutdown
+#
+# The RADIUS proxy for the Kazuha Hub Wi-Fi: the FreeRADIUS daemon of the
+# freeradius3 package, run with a private configuration directory so it never
+# touches /usr/local/etc/raddb or the radiusd_enable setting.
+
+# The variables below are read by rc.subr.
+# shellcheck disable=SC1091,SC2034
+. /etc/rc.subr
+
+name="kazuhahub_wifiproxy"
+rcvar="kazuhahub_wifiproxy_enable"
+desc="Kazuha Hub Wi-Fi Proxy"
+
+load_rc_config "$name"
+: "${kazuhahub_wifiproxy_enable:=NO}"
+
+kazuhahub_wifiproxy_dir="/usr/local/etc/kazuhahub-wifi-proxy"
+kazuhahub_wifiproxy_check="/usr/local/opnsense/scripts/kazuhahub-wifi-proxy/check.sh"
+kazuhahub_wifiproxy_configctl="/usr/local/sbin/configctl"
+
+command="/usr/local/sbin/radiusd"
+command_args="-d ${kazuhahub_wifiproxy_dir} -n radiusd"
+pidfile="/var/run/kazuhahub-wifi-proxy/radiusd.pid"
+required_files="${kazuhahub_wifiproxy_dir}/radiusd.conf"
+extra_commands="reload"
+sig_reload="HUP"
+start_precmd="kazuhahub_wifiproxy_prestart"
+reload_precmd="kazuhahub_wifiproxy_prereload"
+stop_postcmd="kazuhahub_wifiproxy_poststop"
+
+# The addresses the generated configuration listens on.
+kazuhahub_wifiproxy_addresses()
+{
+    sed -n 's/^[[:space:]]*ipaddr = \(.*\)$/\1/p' "${kazuhahub_wifiproxy_dir}/sites-enabled/default"
+}
+
+# A refusal is also written to the check result, so the status page and the
+# widget say why the service is not running.
+kazuhahub_wifiproxy_refuse()
+{
+    warn "$1"
+    /bin/sh "${kazuhahub_wifiproxy_check}" record "$1"
+    return 1
+}
+
+# The listen addresses follow the interfaces, which may have changed since the
+# configuration was last rendered, so every start and reload renders it again.
+kazuhahub_wifiproxy_render()
+{
+    "${kazuhahub_wifiproxy_configctl}" template reload OPNsense/KazuhaHubWifiProxy >/dev/null 2>&1 \
+        || warn "the configuration could not be rendered again; using the last one."
+}
+
+# At boot the interfaces may come up after this script runs, so give them a
+# moment; a listener that cannot bind would stop the daemon.
+kazuhahub_wifiproxy_wait_addresses()
+{
+    _tries=0
+    while :; do
+        _missing=""
+        for _address in $(kazuhahub_wifiproxy_addresses); do
+            if ! /sbin/ifconfig -a inet | grep -q "inet ${_address} "; then
+                _missing="${_missing} ${_address}"
+            fi
+        done
+        [ -z "${_missing}" ] && return 0
+        if [ "${_tries}" -ge 30 ]; then
+            kazuhahub_wifiproxy_refuse "the listen address is not configured on this firewall:${_missing}"
+            return 1
+        fi
+        sleep 1
+        _tries=$((_tries + 1))
+    done
+}
+
+kazuhahub_wifiproxy_prestart()
+{
+    if ! _conflicts="$(/bin/sh "${kazuhahub_wifiproxy_check}" conflicts)"; then
+        kazuhahub_wifiproxy_refuse "refusing to start: ${_conflicts}"
+        return 1
+    fi
+    kazuhahub_wifiproxy_render
+    # The check refuses a configuration with no usable listen interface, central
+    # server or access point, and records why.
+    /bin/sh "${kazuhahub_wifiproxy_check}" start || return 1
+    kazuhahub_wifiproxy_wait_addresses
+}
+
+kazuhahub_wifiproxy_prereload()
+{
+    kazuhahub_wifiproxy_render
+    /bin/sh "${kazuhahub_wifiproxy_check}" start
+}
+
+kazuhahub_wifiproxy_poststop()
+{
+    rm -f /var/run/kazuhahub-wifi-proxy/radiusd.sock
+}
+
+run_rc_command "$1"

@@ -1,0 +1,77 @@
+#!/bin/sh
+set -eu
+
+if [ -x /usr/local/opnsense/scripts/firmware/register.php ]; then
+    /usr/local/opnsense/scripts/firmware/register.php install os-kazuhahub-wifi-proxy >/dev/null 2>&1 || true
+fi
+if [ -f /usr/local/opnsense/scripts/firmware/repos/kazuhahub.sh ]; then
+    /bin/sh /usr/local/opnsense/scripts/firmware/repos/kazuhahub.sh mirror >/dev/null 2>&1 \
+        || echo 'Warning: Kazuha Hub plugin restore manifest could not be updated.' >&2
+fi
+
+# pkg may carry on after a failed +PRE_INSTALL, so say it again: the service refuses to start next to it.
+for marker in /usr/local/opnsense/version/freeradius /usr/local/etc/inc/plugins.inc.d/freeradius.inc; do
+	if [ -e "$marker" ]; then
+		echo 'Warning: os-freeradius is installed. It runs the same radiusd daemon, so Kazuha Hub Wi-Fi Proxy will refuse to start until it is removed.' >&2
+		break
+	fi
+done
+
+echo "===> Preparing Kazuha Hub Wi-Fi Proxy"
+# The generated configuration holds the shared secrets: only root and the
+# daemon's group may enter this directory.
+install -d -m 0750 /usr/local/etc/kazuhahub-wifi-proxy
+chgrp freeradius /usr/local/etc/kazuhahub-wifi-proxy 2>/dev/null || true
+chmod 0755 /usr/local/etc/rc.d/kazuhahub_wifiproxy
+chmod 0644 \
+	/usr/local/etc/inc/plugins.inc.d/kazuhahubwifiproxy.inc \
+	/usr/local/etc/newsyslog.conf.d/kazuhahub-wifi-proxy.conf \
+	/usr/local/opnsense/scripts/kazuhahub-wifi-proxy/certsync.php \
+	/usr/local/opnsense/scripts/kazuhahub-wifi-proxy/check.sh \
+	/usr/local/opnsense/scripts/kazuhahub-wifi-proxy/export_certs.php \
+	/usr/local/opnsense/scripts/kazuhahub-wifi-proxy/homeservers.php \
+	/usr/local/opnsense/scripts/kazuhahub-wifi-proxy/keep_installed.sh \
+	/usr/local/opnsense/scripts/kazuhahub-wifi-proxy/takeover.php \
+	/usr/local/opnsense/service/conf/actions.d/actions_kazuhahubwifiproxy.conf \
+	/usr/local/opnsense/www/js/widgets/KazuhaHubWifiProxy.js \
+	/usr/local/opnsense/www/js/widgets/Metadata/KazuhaHubWifiProxy.xml
+find /usr/local/opnsense/mvc/app/controllers/OPNsense/KazuhaHubWifiProxy /usr/local/opnsense/mvc/app/models/OPNsense/KazuhaHubWifiProxy \
+	/usr/local/opnsense/mvc/app/views/OPNsense/KazuhaHubWifiProxy /usr/local/opnsense/service/templates/OPNsense/KazuhaHubWifiProxy \
+	-type f -exec chmod 0644 {} +
+
+echo "===> Clearing OPNsense menu and ACL cache"
+rm -f \
+	/var/lib/php/tmp/opnsense_menu_cache.xml \
+	/var/lib/php/tmp/opnsense_acl_cache.json
+
+echo "===> Reloading configd actions and templates"
+service configd restart >/dev/null 2>&1 || true
+# A router that ran the former os-kazuhahub-radius keeps its settings: they are
+# moved to the new name unchanged before the model first loads.
+/usr/local/bin/php /usr/local/opnsense/scripts/kazuhahub-wifi-proxy/takeover.php >/dev/null 2>&1 \
+    || echo 'Warning: the os-kazuhahub-radius settings could not be taken over.' >&2
+# Offers the LAN network on a first install.
+/usr/local/opnsense/mvc/script/run_migrations.php OPNsense/KazuhaHubWifiProxy >/dev/null 2>&1 \
+    || echo 'Warning: the Kazuha Hub Wi-Fi Proxy defaults could not be created.' >&2
+configctl template reload OPNsense/KazuhaHubWifiProxy >/dev/null 2>&1 \
+    || echo 'Warning: the Kazuha Hub Wi-Fi Proxy configuration could not be generated.' >&2
+
+# An upgrade, or a reinstall that found its settings in config.xml, resumes; a
+# fresh installation stays stopped until the service is enabled.
+if grep -qs '^kazuhahub_wifiproxy_enable="YES"' /etc/rc.conf.d/kazuhahub_wifiproxy; then
+    service kazuhahub_wifiproxy restart >/dev/null 2>&1 \
+        || echo 'Warning: Kazuha Hub Wi-Fi Proxy could not be restarted.' >&2
+fi
+
+# Register the 6-hourly certificate sync and run it once now, in the background; it does
+# nothing while the service or the sync is off.
+configctl cron restart >/dev/null 2>&1 \
+    || echo 'Warning: the certificate sync could not be scheduled.' >&2
+configctl -d kazuhahubwifiproxy certsync >/dev/null 2>&1 || true
+
+# Installed as the dependency of the transitional os-kazuhahub-radius, pkg marks
+# this package automatic; clear that once this transaction is over.
+daemon -f /bin/sh /usr/local/opnsense/scripts/kazuhahub-wifi-proxy/keep_installed.sh >/dev/null 2>&1 || true
+
+echo "===> Kazuha Hub Wi-Fi Proxy installed. Refresh the browser and open Services > Kazuha Hub Wi-Fi Proxy."
+exit 0

@@ -27,7 +27,7 @@ PLUGINS = {
     'os-sing-box': ('SingBox', 'singbox'),
     'os-frp': ('Frp', 'frp'),
     'os-wanguard': ('Wanguard', 'wanguard'),
-    'os-kazuhahub-radius': ('KazuhaHubRadius', 'kazuhahubradius'),
+    'os-kazuhahub-wifi-proxy': ('KazuhaHubWifiProxy', 'kazuhahubwifiproxy'),
 }
 # A plugin whose settings live in config.xml uses the framework's model and
 # service controllers; the actions they inherit are real routes too.

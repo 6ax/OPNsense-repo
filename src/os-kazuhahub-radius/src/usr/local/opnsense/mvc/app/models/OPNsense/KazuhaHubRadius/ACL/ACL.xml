@@ -1,9 +1,0 @@
-<acl>
-    <page-services-kazuhahubradius>
-        <name>Services: Kazuha Hub RADIUS</name>
-        <patterns>
-            <pattern>ui/kazuhahubradius/*</pattern>
-            <pattern>api/kazuhahubradius/*</pattern>
-        </patterns>
-    </page-services-kazuhahubradius>
-</acl>
