@@ -1,0 +1,115 @@
+<model>
+    <mount>//OPNsense/kazuhahubwifiproxy/general</mount>
+    <description>Kazuha Hub Wi-Fi Proxy</description>
+    <version>1.1.0</version>
+    <items>
+        <enabled type="BooleanField">
+            <Default>0</Default>
+            <Required>Y</Required>
+        </enabled>
+        <interfaces type="InterfaceField">
+            <Required>Y</Required>
+            <Multiple>Y</Multiple>
+            <Default>lan</Default>
+            <filters>
+                <enable>/^(?!0).*$/</enable>
+                <ipaddr>/^(\d{1,3}\.){3}\d{1,3}$/</ipaddr>
+            </filters>
+            <ValidationMessage>Select at least one enabled interface with a static IPv4 address.</ValidationMessage>
+        </interfaces>
+        <servercert type="CertificateField">
+            <Type>cert</Type>
+            <Required>N</Required>
+            <ValidationMessage>Select a server certificate.</ValidationMessage>
+        </servercert>
+        <ca type="CertificateField">
+            <Type>ca</Type>
+            <Required>N</Required>
+            <ValidationMessage>Select the certificate authority that issued the server certificate.</ValidationMessage>
+        </ca>
+        <client_networks type="NetworkField">
+            <AsList>Y</AsList>
+            <FieldSeparator>,</FieldSeparator>
+            <NetMaskRequired>N</NetMaskRequired>
+            <AddressFamily>ipv4</AddressFamily>
+            <WildcardEnabled>N</WildcardEnabled>
+            <Strict>Y</Strict>
+            <ValidationMessage>Enter IPv4 networks such as 192.0.2.0/24, without host bits, or single addresses.</ValidationMessage>
+        </client_networks>
+        <client_secret type="UpdateOnlyTextField">
+            <Mask>/^[A-Za-z0-9!#&amp;()*+,.\/:;&lt;=&gt;?@^_{}|~\[\]-]{8,128}$/D</Mask>
+            <ValidationMessage>Use 8 to 128 characters: letters, digits and ! # &amp; ( ) * + , - . / : ; &lt; = &gt; ? @ [ ] ^ _ { | } ~</ValidationMessage>
+        </client_secret>
+        <cert_sync type="BooleanField">
+            <Default>1</Default>
+            <Required>Y</Required>
+        </cert_sync>
+        <cert_sync_host type="HostnameField">
+            <Required>N</Required>
+            <IpAllowed>Y</IpAllowed>
+            <ValidationMessage>Enter the IP address or host name of the central certificate source.</ValidationMessage>
+        </cert_sync_host>
+        <cert_sync_port type="IntegerField">
+            <Required>N</Required>
+            <MinimumValue>1</MinimumValue>
+            <MaximumValue>65535</MaximumValue>
+            <ValidationMessage>Enter a port between 1 and 65535.</ValidationMessage>
+        </cert_sync_port>
+        <cert_sync_name type="HostnameField">
+            <Required>N</Required>
+            <IpAllowed>N</IpAllowed>
+            <ValidationMessage>Enter the host name the central certificate must carry, such as radius.example.com.</ValidationMessage>
+        </cert_sync_name>
+        <cert_sync_user type="TextField">
+            <Mask>/^[A-Za-z0-9._@-]{1,64}$/D</Mask>
+            <ValidationMessage>Use 1 to 64 letters, digits and . _ @ -</ValidationMessage>
+        </cert_sync_user>
+        <cert_sync_password type="UpdateOnlyTextField">
+            <Mask>/^[\x21-\x7e]{1,256}$/D</Mask>
+            <ValidationMessage>Use 1 to 256 printable characters without spaces.</ValidationMessage>
+        </cert_sync_password>
+        <centrals>
+            <central type="ArrayField">
+                <enabled type="BooleanField">
+                    <Default>1</Default>
+                    <Required>Y</Required>
+                </enabled>
+                <description type="DescriptionField"/>
+                <address type="NetworkField">
+                    <Required>Y</Required>
+                    <AddressFamily>ipv4</AddressFamily>
+                    <NetMaskAllowed>N</NetMaskAllowed>
+                    <WildcardEnabled>N</WildcardEnabled>
+                    <ValidationMessage>Enter the IPv4 address of the central RADIUS server.</ValidationMessage>
+                    <Constraints>
+                        <check001>
+                            <ValidationMessage>This address and port are already configured.</ValidationMessage>
+                            <type>UniqueConstraint</type>
+                            <addFields>
+                                <field1>port</field1>
+                            </addFields>
+                        </check001>
+                    </Constraints>
+                </address>
+                <port type="IntegerField">
+                    <Default>1812</Default>
+                    <Required>Y</Required>
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>65535</MaximumValue>
+                    <ValidationMessage>Enter a port between 1 and 65535.</ValidationMessage>
+                </port>
+                <secret type="UpdateOnlyTextField">
+                    <Mask>/^[A-Za-z0-9!#&amp;()*+,.\/:;&lt;=&gt;?@^_{}|~\[\]-]{8,128}$/D</Mask>
+                    <ValidationMessage>Use 8 to 128 characters: letters, digits and ! # &amp; ( ) * + , - . / : ; &lt; = &gt; ? @ [ ] ^ _ { | } ~</ValidationMessage>
+                </secret>
+                <sequence type="IntegerField">
+                    <Default>10</Default>
+                    <Required>Y</Required>
+                    <MinimumValue>1</MinimumValue>
+                    <MaximumValue>9999</MaximumValue>
+                    <ValidationMessage>Enter a sequence between 1 and 9999; lower numbers are tried first.</ValidationMessage>
+                </sequence>
+            </central>
+        </centrals>
+    </items>
+</model>

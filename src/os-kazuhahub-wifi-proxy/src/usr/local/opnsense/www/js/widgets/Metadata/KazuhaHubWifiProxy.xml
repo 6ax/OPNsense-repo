@@ -1,0 +1,27 @@
+<metadata>
+    <kazuhahubwifiproxy>
+        <filename>KazuhaHubWifiProxy.js</filename>
+        <endpoints>
+            <endpoint>/api/kazuhahubwifiproxy/service/*</endpoint>
+        </endpoints>
+        <translations>
+            <title>Kazuha Hub Wi-Fi Proxy</title>
+            <service>Service</service>
+            <listen>Listening on</listen>
+            <check>Last check</check>
+            <central>Central servers</central>
+            <running>Running</running>
+            <stopped>Stopped</stopped>
+            <disabled>Disabled</disabled>
+            <unknown>Unknown</unknown>
+            <ok>OK</ok>
+            <failed>Failed</failed>
+            <notrun>Not run yet</notrun>
+            <alive>Alive</alive>
+            <zombie>Not answering</zombie>
+            <dead>Dead</dead>
+            <unused>Not used yet</unused>
+            <none>None</none>
+        </translations>
+    </kazuhahubwifiproxy>
+</metadata>

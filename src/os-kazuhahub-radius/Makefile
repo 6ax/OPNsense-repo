@@ -1,14 +1,9 @@
-PKG_NAME?=	os-kazuhahub-radius
 VERSION?=	1.1.0
-TARGET_ABI?=	FreeBSD:*:amd64
 
-.PHONY: package install clean
+.PHONY: package clean
 
 package:
-	TARGET_ABI="$(TARGET_ABI)" PKG_NAME="$(PKG_NAME)" VERSION="$(VERSION)" ./build.sh
-
-install: package
-	pkg add -f "dist/$(PKG_NAME).pkg"
+	VERSION="$(VERSION)" ./build.sh
 
 clean:
 	rm -rf work/freebsd-pkg

@@ -1,0 +1,24 @@
+#!/bin/sh
+set -eu
+
+# Package upgrades keep the generated configuration and the service setting.
+[ -n "${PKG_UPGRADE+x}" ] && exit 0
+
+if [ -x /usr/local/opnsense/scripts/firmware/register.php ]; then
+    /usr/local/opnsense/scripts/firmware/register.php remove os-kazuhahub-wifi-proxy >/dev/null 2>&1 || true
+fi
+
+# The settings stay in config.xml, as OPNsense does for every plugin, so a
+# reinstall finds them again. Everything generated or written at runtime goes:
+# the configuration with its secrets and the exported key, the synced
+# certificate set, the runtime state and the log.
+rm -f /etc/rc.conf.d/kazuhahub_wifiproxy
+rm -rf /usr/local/etc/kazuhahub-wifi-proxy /var/db/kazuhahub-wifi-proxy /var/run/kazuhahub-wifi-proxy /var/log/kazuhahub-wifi-proxy
+
+rm -f \
+	/var/lib/php/tmp/opnsense_menu_cache.xml \
+	/var/lib/php/tmp/opnsense_acl_cache.json
+service configd restart >/dev/null 2>&1 || true
+# Drop the certificate sync from the crontab.
+configctl cron restart >/dev/null 2>&1 || true
+exit 0

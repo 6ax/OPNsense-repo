@@ -22,7 +22,7 @@ jobs:
         run: find src -type f \( -name '*.php' -o -name '*.inc' \) -print0 | xargs -0 -n 1 php -l
       - name: Check shell scripts
         run: |
-          for plugin in staticarp pftop lucky easytier ddns-go lang ttyd speedtest sing-box frp mihomo kazuha-repo kazuhahub-repo ddclient-opnwall unboundcustom kazuhahub-radius wanguard; do
+          for plugin in staticarp pftop lucky easytier ddns-go lang ttyd speedtest sing-box frp mihomo kazuha-repo kazuhahub-repo ddclient-opnwall unboundcustom kazuhahub-wifi-proxy kazuhahub-radius wanguard; do
             sh -n "src/os-$plugin/build.sh"
             for phase in PRE_INSTALL POST_INSTALL PRE_DEINSTALL POST_DEINSTALL; do
               hook="src/os-$plugin/packaging/freebsd/+$phase"
@@ -33,5 +33,5 @@ jobs:
           shellcheck build-repo.sh publish-repo.sh src/os-mihomo/build.sh src/os-mihomo/packaging/freebsd/+PRE_INSTALL src/os-mihomo/packaging/freebsd/+POST_INSTALL src/os-mihomo/packaging/freebsd/+PRE_DEINSTALL src/os-mihomo/packaging/freebsd/+POST_DEINSTALL src/os-mihomo/tests/jail/run.sh src/os-mihomo/tests/jail/prepare.sh src/os-sing-box/build.sh src/os-sing-box/src/usr/local/etc/sing-box/sub/sub.sh
           sh -n src/os-mihomo/src/usr/local/etc/rc.d/mihomo
           sh -n src/os-wanguard/src/usr/local/etc/rc.d/wanguard
-          shellcheck src/os-kazuhahub-radius/build.sh src/os-kazuhahub-radius/src/usr/local/etc/rc.d/kazuhahub_radiusd src/os-kazuhahub-radius/src/usr/local/opnsense/scripts/kazuhahub-radius/check.sh src/os-kazuhahub-radius/tests/lifecycle/run.sh src/os-kazuhahub-radius/tests/lifecycle/build-eapol-test.sh src/os-kazuhahub-radius/packaging/freebsd/+PRE_INSTALL src/os-kazuhahub-radius/packaging/freebsd/+POST_INSTALL src/os-kazuhahub-radius/packaging/freebsd/+PRE_DEINSTALL src/os-kazuhahub-radius/packaging/freebsd/+POST_DEINSTALL
+          shellcheck src/os-kazuhahub-wifi-proxy/build.sh src/os-kazuhahub-wifi-proxy/src/usr/local/etc/rc.d/kazuhahub_wifiproxy src/os-kazuhahub-wifi-proxy/src/usr/local/opnsense/scripts/kazuhahub-wifi-proxy/check.sh src/os-kazuhahub-wifi-proxy/tests/lifecycle/run.sh src/os-kazuhahub-wifi-proxy/tests/lifecycle/upgrade.sh src/os-kazuhahub-wifi-proxy/src/usr/local/opnsense/scripts/kazuhahub-wifi-proxy/keep_installed.sh src/os-kazuhahub-wifi-proxy/tests/lifecycle/build-eapol-test.sh src/os-kazuhahub-wifi-proxy/packaging/freebsd/+PRE_INSTALL src/os-kazuhahub-wifi-proxy/packaging/freebsd/+POST_INSTALL src/os-kazuhahub-wifi-proxy/packaging/freebsd/+PRE_DEINSTALL src/os-kazuhahub-wifi-proxy/packaging/freebsd/+POST_DEINSTALL src/os-kazuhahub-radius/build.sh src/os-kazuhahub-radius/packaging/freebsd/+POST_INSTALL src/os-kazuhahub-radius/packaging/freebsd/+POST_DEINSTALL
           shellcheck client.sh src/os-kazuhahub-repo/build.sh src/os-kazuhahub-repo/src/usr/local/opnsense/scripts/firmware/repos/kazuhahub.sh src/os-kazuhahub-repo/packaging/freebsd/+POST_INSTALL src/os-kazuhahub-repo/packaging/freebsd/+POST_DEINSTALL src/os-kazuha-repo/build.sh src/os-kazuha-repo/src/usr/local/opnsense/scripts/firmware/repos/kazuha.sh src/os-kazuha-repo/packaging/freebsd/+POST_INSTALL src/os-kazuha-repo/packaging/freebsd/+POST_DEINSTALL

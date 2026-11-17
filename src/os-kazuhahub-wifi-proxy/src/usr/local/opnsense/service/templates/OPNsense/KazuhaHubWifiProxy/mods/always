@@ -1,0 +1,39 @@
+# Kazuha Hub Wi-Fi Proxy: the always module, which gives the sections their
+# reject, ok and noop results.
+# Rendered from the OPNsense configuration; manual edits are overwritten.
+
+always reject {
+	rcode = reject
+}
+
+always fail {
+	rcode = fail
+}
+
+always ok {
+	rcode = ok
+}
+
+always handled {
+	rcode = handled
+}
+
+always invalid {
+	rcode = invalid
+}
+
+always userlock {
+	rcode = userlock
+}
+
+always notfound {
+	rcode = notfound
+}
+
+always noop {
+	rcode = noop
+}
+
+always updated {
+	rcode = updated
+}

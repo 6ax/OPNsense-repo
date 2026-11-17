@@ -1,67 +1,34 @@
 #!/bin/sh
 set -eu
-
+# The proxy itself is os-kazuhahub-wifi-proxy, installed as this package's
+# dependency; its first start takes the former settings over from config.xml.
+# Registration stays so that the Plugins page lists this package and an
+# operator can remove it there once it is no longer needed.
 if [ -x /usr/local/opnsense/scripts/firmware/register.php ]; then
     /usr/local/opnsense/scripts/firmware/register.php install os-kazuhahub-radius >/dev/null 2>&1 || true
 fi
 if [ -f /usr/local/opnsense/scripts/firmware/repos/kazuhahub.sh ]; then
-    /bin/sh /usr/local/opnsense/scripts/firmware/repos/kazuhahub.sh mirror >/dev/null 2>&1 \
-        || echo 'Warning: Kazuha Hub plugin restore manifest could not be updated.' >&2
+    /bin/sh /usr/local/opnsense/scripts/firmware/repos/kazuhahub.sh mirror >/dev/null 2>&1 || true
 fi
 
-# pkg may carry on after a failed +PRE_INSTALL, so say it again: the service refuses to start next to it.
-for marker in /usr/local/opnsense/version/freeradius /usr/local/etc/inc/plugins.inc.d/freeradius.inc; do
-	if [ -e "$marker" ]; then
-		echo 'Warning: os-freeradius is installed. It runs the same radiusd daemon, so Kazuha Hub RADIUS will refuse to start until it is removed.' >&2
-		break
-	fi
-done
-
-echo "===> Preparing Kazuha Hub RADIUS"
-# The generated configuration holds the shared secrets: only root and the
-# daemon's group may enter this directory.
-install -d -m 0750 /usr/local/etc/kazuhahub-radius
-chgrp freeradius /usr/local/etc/kazuhahub-radius 2>/dev/null || true
-chmod 0755 /usr/local/etc/rc.d/kazuhahub_radiusd
-chmod 0644 \
-	/usr/local/etc/inc/plugins.inc.d/kazuhahubradius.inc \
-	/usr/local/etc/newsyslog.conf.d/kazuhahub-radius.conf \
-	/usr/local/opnsense/scripts/kazuhahub-radius/certsync.php \
-	/usr/local/opnsense/scripts/kazuhahub-radius/check.sh \
-	/usr/local/opnsense/scripts/kazuhahub-radius/export_certs.php \
-	/usr/local/opnsense/scripts/kazuhahub-radius/homeservers.php \
-	/usr/local/opnsense/service/conf/actions.d/actions_kazuhahubradius.conf \
-	/usr/local/opnsense/www/js/widgets/KazuhaHubRadius.js \
-	/usr/local/opnsense/www/js/widgets/Metadata/KazuhaHubRadius.xml
-find /usr/local/opnsense/mvc/app/controllers/OPNsense/KazuhaHubRadius /usr/local/opnsense/mvc/app/models/OPNsense/KazuhaHubRadius \
-	/usr/local/opnsense/mvc/app/views/OPNsense/KazuhaHubRadius /usr/local/opnsense/service/templates/OPNsense/KazuhaHubRadius \
-	-type f -exec chmod 0644 {} +
-
-echo "===> Clearing OPNsense menu and ACL cache"
-rm -f \
-	/var/lib/php/tmp/opnsense_menu_cache.xml \
-	/var/lib/php/tmp/opnsense_acl_cache.json
-
-echo "===> Reloading configd actions and templates"
+# The former service: its package scripts already stopped it, and an upgrade
+# keeps its generated files. Make sure no daemon of it is left, then remove
+# what it generated: the rc setting, the configuration with its secrets and the
+# exported key, the runtime state and the log.
+old_pid=/var/run/kazuhahub-radius/radiusd.pid
+if [ -s "$old_pid" ] && kill -0 "$(cat "$old_pid")" 2>/dev/null; then
+    kill "$(cat "$old_pid")" 2>/dev/null || true
+    sleep 2
+fi
+rm -f /etc/rc.conf.d/kazuhahub_radiusd
+rm -rf /usr/local/etc/kazuhahub-radius /var/run/kazuhahub-radius /var/log/kazuhahub-radius
+rm -f /var/lib/php/tmp/opnsense_menu_cache.xml /var/lib/php/tmp/opnsense_acl_cache.json
 service configd restart >/dev/null 2>&1 || true
-# Offers the two central servers and the LAN network on a first install.
-/usr/local/opnsense/mvc/script/run_migrations.php OPNsense/KazuhaHubRadius >/dev/null 2>&1 \
-    || echo 'Warning: the Kazuha Hub RADIUS defaults could not be created.' >&2
-configctl template reload OPNsense/KazuhaHubRadius >/dev/null 2>&1 \
-    || echo 'Warning: the Kazuha Hub RADIUS configuration could not be generated.' >&2
 
-# An upgrade, or a reinstall that found its settings in config.xml, resumes; a
-# fresh installation stays stopped until the service is enabled.
-if grep -qs '^kazuhahub_radiusd_enable="YES"' /etc/rc.conf.d/kazuhahub_radiusd; then
-    service kazuhahub_radiusd restart >/dev/null 2>&1 \
-        || echo 'Warning: Kazuha Hub RADIUS could not be restarted.' >&2
+# The renamed service may have been installed while the former daemon still
+# held port 1812; start it now that the port is free.
+if grep -qs '^kazuhahub_wifiproxy_enable="YES"' /etc/rc.conf.d/kazuhahub_wifiproxy; then
+    service kazuhahub_wifiproxy restart >/dev/null 2>&1 \
+        || echo 'Warning: Kazuha Hub Wi-Fi Proxy could not be restarted.' >&2
 fi
-
-# Register the 6-hourly certificate sync and run it once now, in the background; it does
-# nothing while the service or the sync is off.
-configctl cron restart >/dev/null 2>&1 \
-    || echo 'Warning: the certificate sync could not be scheduled.' >&2
-configctl -d kazuhahubradius certsync >/dev/null 2>&1 || true
-
-echo "===> Kazuha Hub RADIUS installed. Refresh the browser and open Services > Kazuha Hub RADIUS."
 exit 0

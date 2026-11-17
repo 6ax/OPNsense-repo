@@ -1,9 +1,0 @@
-<menu>
-    <Services>
-        <KazuhaHubRadius VisibleName="Kazuha Hub RADIUS" order="93" cssClass="fa fa-wifi fa-fw">
-            <Settings order="10" VisibleName="Settings" url="/ui/kazuhahubradius">
-                <item url="/ui/kazuhahubradius/*" visibility="hidden"/>
-            </Settings>
-        </KazuhaHubRadius>
-    </Services>
-</menu>
