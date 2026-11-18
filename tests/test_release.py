@@ -172,10 +172,12 @@ class ReleasePreparationTests(ReleaseFixture):
         digest = hashlib.sha256(nethub.read_bytes()).hexdigest()
         module = SimpleNamespace(enabled_targets=lambda project: self.recipes)
         with patch.object(verify, 'target_module', return_value=module), \
+                patch.object(verify, 'plugin_record') as registry_check, \
                 patch.object(verify, 'verify_source_package', side_effect=[
                     None, {'package_sha256': digest, 'frp_version': '0.71.1'},
                 ]):
             report = verify.prepare_release(self.site, self.source, COMMIT, [mihomo, nethub])
+        registry_check.assert_called_once_with(self.source, 'os-nethub-agent')
         self.assertEqual([{
             'path': recipe['repository'] + '/All/os-nethub-agent-0.0.19.pkg',
             'name': 'os-nethub-agent', 'sha256': digest, 'abi': recipe['abi'], 'frp_version': '0.71.1',

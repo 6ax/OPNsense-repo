@@ -621,6 +621,7 @@ def prepare_release(site, source, commit, packages):
             destinations = [value['path']]
         else:
             # Every other plugin is published through its committed staging record.
+            plugin_record(source, name)
             verified_package = verify_source_package(candidate, source, plugin=name)
             if abi == INDEPENDENT_ABI:
                 repositories = {t['repository'] for t in targets}
