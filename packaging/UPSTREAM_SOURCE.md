@@ -108,6 +108,12 @@ record and its digests must come from a separate build. The verifier downloads
 the pinned source archive or reads it from `NETHUB_SOURCE_ARCHIVE` if an
 operator has cached it locally. Both paths check the same archive digest.
 
+When preparing a catalog containing NetHub, the signed release report records
+the frp version recovered from the verified package. The public verifier
+validates the field's format, and source-aware verification compares it to the
+bound package. NetHub's deployment doctor can use the signed report to compare
+the published appliance with the running relay.
+
 Validation: `python3 -B -m unittest discover -s tests -p test_upstream_source.py -v`.
 The adapter and candidate tests use `test_nethub_source.py` and
 `test_nethub_package.py` with the same command. The existing shared-suite discovery

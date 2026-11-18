@@ -227,6 +227,7 @@ def verify_snapshot(package, archive, lock, build_record, build_record_sha256, g
     return {'source_commit': lock['commit'], 'source_archive_sha256': lock['sha256'],
             'build_record_sha256': build_record_sha256, 'package_sha256': package_sha256,
             'files_compared': len(expected), 'hooks_compared': len(stage['scripts']),
+            'frp_version': stage['frp_version'],
             'matches_reviewed_inputs_and_bytes': True, 'native_lifecycle_or_release_accepted': False}
 
 

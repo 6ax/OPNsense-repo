@@ -163,6 +163,26 @@ class ReleaseFixture(unittest.TestCase):
 
 
 class ReleasePreparationTests(ReleaseFixture):
+    def test_nethub_frp_version_comes_from_verified_package(self):
+        recipe = self.recipes[0]
+        mihomo = self.package(recipe)
+        nethub = self.package(recipe, label='nethub', manifest_changes={
+            'name': 'os-nethub-agent', 'version': '0.0.19',
+        })
+        digest = hashlib.sha256(nethub.read_bytes()).hexdigest()
+        module = SimpleNamespace(enabled_targets=lambda project: self.recipes)
+        with patch.object(verify, 'target_module', return_value=module), \
+                patch.object(verify, 'plugin_record') as registry_check, \
+                patch.object(verify, 'verify_source_package', side_effect=[
+                    None, {'package_sha256': digest, 'frp_version': '0.71.1'},
+                ]):
+            report = verify.prepare_release(self.site, self.source, COMMIT, [mihomo, nethub])
+        registry_check.assert_called_once_with(self.source, 'os-nethub-agent')
+        self.assertEqual([{
+            'path': recipe['repository'] + '/All/os-nethub-agent-0.0.19.pkg',
+            'name': 'os-nethub-agent', 'sha256': digest, 'abi': recipe['abi'], 'frp_version': '0.71.1',
+        }], report['additional_packages'])
+
     def test_two_native_targets_keep_separate_hashes_reports_and_destinations(self):
         self.recipes.append(target(16, '27.1', '3.14', '16.0'))
         packages = [self.package(recipe) for recipe in self.recipes]
