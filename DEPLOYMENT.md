@@ -2,7 +2,34 @@
 
 Maintained packages use committed OPNsense CE target recipes in `src/os-mihomo/packaging/targets.json`. The enabled target is **26.7 / FreeBSD:15:amd64 / Python 3.13**. The unannounced 27.1 target remains disabled. Source main excludes generated packages and catalogs; signed output lives on a replaceable gh-pages branch and Pages serves the full pkg repository tree. Legacy FreeBSD 14/15 downloads and Mihomo 1.0.2 remain available for compatibility and rollback. Unsafe Mihomo 1.1.0 is withdrawn.
 
-The existing RSA signing key stays on the local signing host with mode 0600. GitHub receives signed catalogs, packages, a public key and a signed test report. No private key is uploaded or stored in GitHub Secrets.
+The existing RSA signing key stays on the signing hosts with mode 0600. GitHub receives signed catalogs, packages, a public key and a signed test report. No private key is uploaded or stored in GitHub Secrets.
+
+## Signing hosts and the key
+
+Two hosts can sign, with the same RSA 4096 key and the same public key. The routers pin the public key's SHA-256: `92e83cb0267c3ef27cb355bc2f045c3449fd5c741d1030c7a90c879b00fa5e9b`. Neither host is a router.
+
+- **Test VM.** The OPNsense 26.7 test VM that also runs the native and lifecycle tests.
+- **Signer VM on the development server.** A small FreeBSD 15.1 VM named `opnsense-pkg-signer` under libvirt: 2 vCPU, 4 GB, a 40 GB disk. It has root ssh by key only, and carries pkg, python3, git and openssl. It builds and signs only; the lifecycle tests stay on the test VM.
+
+On both hosts the key is `/root/pkgsign/kazuha-repo.key`:
+- mode 0600 root:wheel, in a 0700 directory;
+- without a passphrase, since `pkg repo` reads it unattended.
+
+It was copied host to host over ssh, never through a workstation, a repository, notes or logs. Check either copy without printing it:
+
+```sh
+openssl pkey -in /root/pkgsign/kazuha-repo.key -pubout | sha256 -q   # must print the pinned digest above
+```
+
+A new signer is accepted only after a dry run:
+1. Re-sign the published tree with `build-repo.sh`.
+2. Verify it with `verify-repo.py`.
+3. Let `pkg` itself accept the catalog with the pinned public key. Use a throwaway `PKG_DBDIR` and `REPOS_DIR` and `signature_type: "pubkey"`, then confirm with `pkg rquery` that the catalog is usable.
+4. Publish nothing from the dry run.
+
+The signer VM passed this with pkg 2.9.2; the test VM signs with pkg 2.8.4. The verifier accepts the catalog sums of both.
+
+**Offline backup.** One copy of the key is kept offline in the owner's password manager. It is encrypted with `openssl pkey -aes256`, with a passphrase only the owner knows, so it is never stored in plain text. It was checked by comparing `openssl pkey -in kazuha-repo.key.enc -pubout | sha256 -q` with the pinned digest. Losing every copy would mean a new trust anchor, and every router would have to trust it again by hand.
 
 ## Build and exercise the real upgrade
 
