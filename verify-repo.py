@@ -852,6 +852,17 @@ def verify_source_package(package, source, plugin='os-mihomo', binary='mihomo', 
             expected['/usr/local/bin/' + binary] = lzma.decompress((src / 'src/usr/local/bin' / asset).read_bytes())
     else:
         expected = record_files(src, record, manifest, plugin, source)
+    verify_file_inventory(package, manifest, expected)
+    expected_scripts = {}
+    for phase in PHASES:
+        hook = hook_source(src, phase)
+        if hook is not None:
+            expected_scripts[phase] = module.transform_hook(src, phase, target) if module else hook.read_text()
+    verify_lifecycle_hooks(manifest, expected_scripts)
+
+
+def verify_file_inventory(package, manifest, expected):
+    """Compare a reconstructed inventory using both package archive readers."""
     actual = manifest['files']
     archive_paths = archive_members(package)
     if any('__pycache__' in Path(name).parts or Path(name).suffix in {'.pyc', '.pyo'} for name in archive_paths.values()):
@@ -869,12 +880,15 @@ def verify_source_package(package, source, plugin='os-mihomo', binary='mihomo', 
         archived = subprocess.check_output(['tar', '-xOf', str(package), '-P', '--', archive_paths[path]])
         if archived != content:
             raise ValueError('Package archive differs from its manifest: ' + path)
+
+
+def verify_lifecycle_hooks(manifest, expected):
+    """Compare exact source hooks, allowing libpkg's documented encoding."""
     scripts = manifest.get('scripts') or {}
     if set(scripts) - set(PHASES):
         raise ValueError('Package lifecycle hook differs from source.')
     for phase in PHASES:
-        hook = hook_source(src, phase)
-        content = None if hook is None else module.transform_hook(src, phase, target) if module else hook.read_text()
+        content = expected.get(phase)
         if content is None:
             if phase in scripts:
                 raise ValueError('Package lifecycle hook differs from source.')
