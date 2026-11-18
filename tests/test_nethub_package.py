@@ -91,11 +91,14 @@ class NetHubPackageTests(unittest.TestCase):
         self.write_package()
 
     @staticmethod
-    def add(archive, name, raw, mode=0o644, uid=0):
+    def add(archive, name, raw, mode=0o644, uid=0, gid=0, uname="", gname=""):
         member = tarfile.TarInfo(name)
         member.size = len(raw)
         member.mode = mode
         member.uid = uid
+        member.gid = gid
+        member.uname = uname
+        member.gname = gname
         archive.addfile(member, io.BytesIO(raw))
 
     def pin_record(self):
@@ -103,16 +106,23 @@ class NetHubPackageTests(unittest.TestCase):
         self.record_path.write_bytes(raw)
         self.record_sha = sha(raw)
 
-    def write_package(self, scripts=None, extra=None, wrong_mode=False, compact=None, flatsize=None, wrong_owner=False):
+    def write_package(self, scripts=None, extra=None, wrong_mode=False, compact=None, flatsize=None, wrong_owner=False, file_attributes=None):
         manifest = dict(self.manifest, files={name: '1$' + sha(raw) for name, raw in self.payload.items()},
                         flatsize=sum(map(len, self.payload.values())) if flatsize is None else flatsize,
                         scripts=self.scripts if scripts is None else scripts)
+        if file_attributes is not None:
+            for name, checksum in manifest['files'].items():
+                mode = 0o755 if name in ['/usr/local/etc/rc.d/nethub_agent_frpc', BIN + 'frpc'] else 0o644
+                manifest['files'][name] = dict(sum=checksum, uname='root', gname='wheel',
+                                              perm=format(mode, '04o'), mtime=0, **file_attributes)
         with tarfile.open(self.package, 'w') as archive:
             self.add(archive, '+MANIFEST', json.dumps(manifest).encode())
             self.add(archive, '+COMPACT_MANIFEST', json.dumps(manifest if compact is None else compact).encode())
             for name, raw in self.payload.items():
                 mode = 0o755 if name in ['/usr/local/etc/rc.d/nethub_agent_frpc', BIN + 'frpc'] else 0o644
-                self.add(archive, name.lstrip('/'), raw, 0o644 if wrong_mode else mode, 1000 if wrong_owner else 0)
+                owner = (65534, 65534, 'root', 'wheel') if file_attributes is not None else (
+                    1000 if wrong_owner else 0, 0, '', '')
+                self.add(archive, name.lstrip('/'), raw, 0o644 if wrong_mode else mode, *owner)
             if extra:
                 self.add(archive, *extra)
 
@@ -126,6 +136,13 @@ class NetHubPackageTests(unittest.TestCase):
         self.assertEqual(result['files_compared'], len(self.payload))
         self.assertEqual(result['hooks_compared'], 4)
         self.assertFalse(result['native_lifecycle_or_release_accepted'])
+
+    def test_native_libpkg_file_metadata_is_validated(self):
+        self.write_package(file_attributes={})
+        self.assertTrue(self.verify()['matches_reviewed_inputs_and_bytes'])
+        self.write_package(file_attributes={'unexpected': True})
+        with self.assertRaisesRegex(ValueError, 'per-file manifest attributes'):
+            self.verify()
 
     def test_cli_reports_scoped_candidate_verification(self):
         lock = self.root / 'source-lock.json'

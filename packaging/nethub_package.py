@@ -165,15 +165,30 @@ def verify_snapshot(package, archive, lock, build_record, build_record_sha256, g
         raise ValueError('Candidate package has no complete file and hook inventories.')
     if any(not isinstance(value, str) for value in manifest['scripts'].values()):
         raise ValueError('Candidate lifecycle hooks must be strings.')
-    if any(not isinstance(value, str) for value in manifest['files'].values()):
-        raise ValueError('Candidate package carries unreviewed per-file manifest attributes.')
     for member in verify.python_members(package):
         if not member.isfile():
             raise ValueError('NetHub candidate package must contain only regular files.')
         name = '/' + member.name.removeprefix('./').lstrip('/')
         executable = name in EXECUTABLE_SOURCE or name == source.GENERATED + 'frpc'
-        if member.mode != (0o755 if executable else 0o644) or member.uid != 0 or member.gid != 0:
+        entry = manifest['files'].get(name)
+        # libpkg's extended file records carry the installation owner by name.
+        numeric_owner = (member.uid, member.gid)
+        valid_owner = numeric_owner == (0, 0) or (
+            isinstance(entry, dict) and numeric_owner == (65534, 65534)
+            and (member.uname, member.gname) == ('root', 'wheel'))
+        if member.mode != (0o755 if executable else 0o644) or not valid_owner:
             raise ValueError('Candidate file permissions or ownership differ from the builder: ' + name)
+        if name in {'/+MANIFEST', '/+COMPACT_MANIFEST'}:
+            continue
+        if isinstance(entry, dict):
+            if (set(entry) != {'sum', 'uname', 'gname', 'perm', 'mtime'}
+                    or not isinstance(entry['sum'], str)
+                    or entry['uname'] != 'root' or entry['gname'] != 'wheel'
+                    or entry['perm'] != format(member.mode, '04o')
+                    or type(entry['mtime']) is not int or entry['mtime'] != member.mtime):
+                raise ValueError('Candidate per-file manifest attributes differ from the builder: ' + name)
+        elif not isinstance(entry, str):
+            raise ValueError('Candidate file has no manifest checksum: ' + name)
     verify.verify_file_inventory(package, manifest, expected)
     verify.verify_lifecycle_hooks(manifest, stage['scripts'])
     with package.open('rb') as stream:
