@@ -137,6 +137,30 @@ class NetHubPackageTests(unittest.TestCase):
         self.assertEqual(result['hooks_compared'], 4)
         self.assertFalse(result['native_lifecycle_or_release_accepted'])
 
+    def test_declared_package_notices_match_the_pinned_source(self):
+        notices = {'LICENSE': b'NetHub license.\n', 'NOTICE': b'NetHub notice.\n'}
+        declarations = {
+            PLUGIN + '/packaging/freebsd/notice-files': b'LICENSE\nNOTICE\n',
+            **notices,
+        }
+        with tarfile.open(self.archive) as archive:
+            members = {item.name: archive.extractfile(item).read() for item in archive}
+        with tarfile.open(self.archive, 'w:gz') as archive:
+            for name, raw in members.items():
+                self.add(archive, name, raw)
+            for name, raw in declarations.items():
+                self.add(archive, 'synthetic-fixture/' + name, raw)
+        self.lock['sha256'] = self.record['source_archive_sha256'] = sha(self.archive.read_bytes())
+        self.pin_record()
+        prefix = '/usr/local/share/licenses/os-nethub-agent/'
+        self.payload.update({prefix + name: raw for name, raw in notices.items()})
+        self.write_package()
+        self.assertEqual(self.verify()['files_compared'], len(self.payload))
+        self.payload[prefix + 'NOTICE'] = b'Replaced notice.\n'
+        self.write_package()
+        with self.assertRaises(ValueError):
+            self.verify()
+
     def test_native_libpkg_file_metadata_is_validated(self):
         self.write_package(file_attributes={})
         self.assertTrue(self.verify()['matches_reviewed_inputs_and_bytes'])

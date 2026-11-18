@@ -65,6 +65,15 @@ def reconstruct(archive, lock):
         if destination == GENERATED.rstrip('/') or destination.startswith(GENERATED):
             raise ValueError('Copied source collides with NetHub generated build outputs.')
         files[destination] = content
+    notice_inventory = source.get(PLUGIN + '/packaging/freebsd/notice-files')
+    if notice_inventory is not None:
+        if notice_inventory != b'LICENSE\nNOTICE\n':
+            raise ValueError('NetHub package notice inventory is invalid.')
+        for name in ('LICENSE', 'NOTICE'):
+            destination = '/usr/local/share/licenses/os-nethub-agent/' + name
+            if destination in files or not source.get(name, b'').strip():
+                raise ValueError('NetHub package notice is missing or collides with copied source.')
+            files[destination] = source[name]
     if PRODUCT_PATH not in files:
         raise ValueError('NetHub source has no product version metadata.')
     product = json_object(files[PRODUCT_PATH])
