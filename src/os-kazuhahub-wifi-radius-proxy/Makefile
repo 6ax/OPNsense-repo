@@ -1,5 +1,5 @@
 PKG_NAME?=	os-kazuhahub-wifi-radius-proxy
-VERSION?=	1.2.0
+VERSION?=	1.2.1
 TARGET_ABI?=	FreeBSD:*:amd64
 
 .PHONY: package install clean

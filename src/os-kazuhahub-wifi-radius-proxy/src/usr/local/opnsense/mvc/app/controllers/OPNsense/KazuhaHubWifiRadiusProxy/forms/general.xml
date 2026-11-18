@@ -38,6 +38,12 @@
         <help>The RADIUS shared secret configured on the access points. It is never shown again; leave the field empty to keep the stored one.</help>
     </field>
     <field>
+        <id>general.log_logins</id>
+        <label>Log logins</label>
+        <type>checkbox</type>
+        <help>Write one line per login to the log, "Login OK", "Login incorrect", or "Login failed" when no central server answers, with the user name, the access point (client) and the calling station. Passwords are never logged, correct or not. The log is under Services: Kazuha Hub Wi-Fi RADIUS: Log File.</help>
+    </field>
+    <field>
         <id>general.cert_sync</id>
         <label>Sync certificates from the central node</label>
         <type>checkbox</type>

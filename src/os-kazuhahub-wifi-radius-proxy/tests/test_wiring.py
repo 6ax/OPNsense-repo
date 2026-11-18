@@ -179,10 +179,27 @@ class ServiceTests(unittest.TestCase):
     def test_the_log_is_rotated_by_a_plain_newsyslog_entry(self):
         text = read('usr/local/etc/newsyslog.conf.d/kazuhahub-wifi-radius-proxy.conf')
         entries = [line.split() for line in text.splitlines() if line and not line.startswith('#')]
-        self.assertEqual(len(entries), 1)
-        self.assertEqual(entries[0][:3], ['/var/log/kazuhahub-wifi-radius-proxy/radius.log', 'freeradius:freeradius', '640'])
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0][:3], ['/var/log/kazuhahub-wifi-radius-proxy/kazuhahub-wifi-radius-proxy_radius.log',
+                                          'freeradius:freeradius', '640'])
         self.assertEqual(entries[0][-3:], ['JC', '/var/run/kazuhahub-wifi-radius-proxy/radiusd.pid', '1'])
-        self.assertIn('${logdir}/radius.log', (TEMPLATES / 'radiusd.conf').read_text())
+        self.assertIn('${logdir}/kazuhahub-wifi-radius-proxy_radius.log', (TEMPLATES / 'radiusd.conf').read_text())
+        # The login lines have a file of their own; linelog reopens it, so no signal.
+        self.assertEqual(entries[1], ['/var/log/kazuhahub-wifi-radius-proxy/kazuhahub-wifi-radius-proxy_logins.log',
+                                      'freeradius:freeradius', '640', '7', '2048', '*', 'JCN'])
+    def test_the_log_page_is_the_standard_one_for_this_log(self):
+        # core's log_matcher reads /var/log/<scope>/<scope>_*.log for module core.
+        menu = ET.parse(MODELS / 'Menu/Menu.xml').getroot()
+        entry = menu.find('Services/KazuhaHubWifiRadiusProxy/LogFile')
+        self.assertEqual(entry.get('url'), '/ui/diagnostics/log/core/kazuhahub-wifi-radius-proxy')
+        patterns = [p.text for p in ET.parse(MODELS / 'ACL/ACL.xml').getroot().iter('pattern')]
+        self.assertIn('ui/diagnostics/log/core/kazuhahub-wifi-radius-proxy', patterns)
+        # View, export and follow the log; clearing it would delete a file radiusd still writes.
+        self.assertIn('api/diagnostics/log/core/kazuhahub-wifi-radius-proxy', patterns)
+        self.assertNotIn('api/diagnostics/log/core/kazuhahub-wifi-radius-proxy*', patterns)
+        self.assertNotIn('api/diagnostics/log/core/kazuhahub-wifi-radius-proxy/clear', patterns)
+        model = ET.parse(MODELS / 'General.xml').getroot().find('items')
+        self.assertEqual((model.find('log_logins').get('type'), model.find('log_logins/Default').text), ('BooleanField', '1'))
 
 
 class CertSyncTests(unittest.TestCase):
@@ -228,7 +245,8 @@ class RouteTests(unittest.TestCase):
     def test_menu_acl_and_pages_agree(self):
         menu = ET.parse(MODELS / 'Menu/Menu.xml').getroot()
         urls = {node.get('url') for node in menu.iter() if node.get('url')}
-        self.assertEqual(urls, {'/ui/kazuhahubwifiradiusproxy', '/ui/kazuhahubwifiradiusproxy/*'})
+        self.assertEqual(urls, {'/ui/kazuhahubwifiradiusproxy', '/ui/kazuhahubwifiradiusproxy/*',
+                                '/ui/diagnostics/log/core/kazuhahub-wifi-radius-proxy'})
         heading = menu.find('Services/KazuhaHubWifiRadiusProxy')
         self.assertEqual((heading.get('VisibleName'), heading.get('order')), ('Kazuha Hub Wi-Fi RADIUS', '93'))
         self.assertTrue((CONTROLLERS / 'IndexController.php').is_file())
@@ -236,7 +254,11 @@ class RouteTests(unittest.TestCase):
         acl = ET.parse(MODELS / 'ACL/ACL.xml').getroot()
         self.assertEqual(acl[0].tag, 'page-services-kazuhahubwifiradiusproxy')
         self.assertEqual(acl[0].find('name').text, 'Services: Kazuha Hub Wi-Fi RADIUS')
-        self.assertEqual([pattern.text for pattern in acl.iter('pattern')], ['ui/kazuhahubwifiradiusproxy/*', 'api/kazuhahubwifiradiusproxy/*'])
+        self.assertEqual([pattern.text for pattern in acl.iter('pattern')], ['ui/kazuhahubwifiradiusproxy/*', 'api/kazuhahubwifiradiusproxy/*',
+                         'ui/diagnostics/log/core/kazuhahub-wifi-radius-proxy',
+                         'api/diagnostics/log/core/kazuhahub-wifi-radius-proxy',
+                         'api/diagnostics/log/core/kazuhahub-wifi-radius-proxy/export',
+                         'api/diagnostics/log/core/kazuhahub-wifi-radius-proxy/live'])
 
     def test_the_grid_endpoints_the_page_uses_exist_in_the_settings_controller(self):
         volt = (MVC / 'views/OPNsense' / MODULE / 'index.volt').read_text()
@@ -297,17 +319,17 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual({key: version[key] for key in ('product_id', 'product_name', 'product_abi', 'product_arch',
                                                         'product_version', 'product_tier')},
                          {'product_id': 'os-kazuhahub-wifi-radius-proxy', 'product_name': 'kazuhahub-wifi-radius-proxy', 'product_abi': '26.7',
-                          'product_arch': 'amd64', 'product_version': '1.2.0', 'product_tier': '4'})
+                          'product_arch': 'amd64', 'product_version': '1.2.1', 'product_tier': '4'})
         self.assertEqual(version['product_email'], 'https://github.com/KazuhaHub/')
         self.assertEqual(version['product_website'], 'https://github.com/KazuhaHub/OPNsense-repo')
         build = (PACKAGE / 'build.sh').read_text()
-        self.assertIn('VERSION="${VERSION:-1.2.0}"', build)
+        self.assertIn('VERSION="${VERSION:-1.2.1}"', build)
         self.assertIn('PKG_NAME="${PKG_NAME:-os-kazuhahub-wifi-radius-proxy}"', build)
         self.assertIn('MAINTAINER="${MAINTAINER:-https://github.com/KazuhaHub/}"', build)
         self.assertIn('ORIGIN="${ORIGIN:-opnsense/os-kazuhahub-wifi-radius-proxy}"', build)
-        self.assertIn('VERSION?=\t1.2.0', (PACKAGE / 'Makefile').read_text())
+        self.assertIn('VERSION?=\t1.2.1', (PACKAGE / 'Makefile').read_text())
         record = json.loads((REPOSITORY / 'packaging/plugins.json').read_text())['plugins']['os-kazuhahub-wifi-radius-proxy']
-        self.assertEqual(record['version'], '1.2.0')
+        self.assertEqual(record['version'], '1.2.1')
         self.assertEqual(record['abi'], 'independent')
         self.assertEqual(record['staging'], 'tree')
         self.assertEqual(record['stage'], {'src': '/'})

@@ -129,7 +129,7 @@ expect 'the model refuses enabling the service without a usable central server' 
 expect 'the model refuses a client network wider than /8' "grep -q '\"wide_network\":\"refused\"' '$W/rules.json'"
 expect 'the model refuses the LAN once a gateway of System > Gateways points at it' "grep -q '\"gateway_ref\":\"refused\"' '$W/rules.json'"
 expect 'newsyslog reads the shipped rotation entry for the daemon log' \
-    "newsyslog -nv -f /usr/local/etc/newsyslog.conf.d/kazuhahub-wifi-radius-proxy.conf 2>&1 | grep -q 'kazuhahub-wifi-radius-proxy/radius.log'"
+    "newsyslog -nv -f /usr/local/etc/newsyslog.conf.d/kazuhahub-wifi-radius-proxy.conf 2>&1 | grep -q 'kazuhahub-wifi-radius-proxy/kazuhahub-wifi-radius-proxy_radius.log'"
 expect 'the secrets are in config.xml, where OPNsense keeps its secrets' "grep -q '$AP' /conf/config.xml"
 
 # --- generated configuration and checks ---------------------------------------
@@ -337,10 +337,25 @@ expect 'the service controller reports running, the listen address and the last 
     "grep -q '\"status\":\"running\"' '$W/status.json' && grep -q '10.0.0.1' '$W/status.json' && grep -q '\"result\":\"ok\"' '$W/status.json'"
 expect 'the service controller carries no secret' \
     "! grep -q -F -e '$AP' -e '$USERPASS' '$W/status.json'"
+RLOG=/var/log/kazuhahub-wifi-radius-proxy/kazuhahub-wifi-radius-proxy_logins.log
 expect 'the log holds no password and no secret' \
-    "! grep -q -e '$USERPASS' -e 'wrong-password-for-the-test' -e '$AP' -e \"\$(cat '$SECRETS/c1')\" -e \"\$(cat '$SECRETS/c2')\" /var/log/kazuhahub-wifi-radius-proxy/radius.log"
-expect 'the log records the accept and the reject' \
-    "grep -q 'Login OK' /var/log/kazuhahub-wifi-radius-proxy/radius.log && grep -q 'Login incorrect' /var/log/kazuhahub-wifi-radius-proxy/radius.log"
+    "! grep -q -e '$USERPASS' -e 'wrong-password-for-the-test' -e '$AP' -e \"\$(cat '$SECRETS/c1')\" -e \"\$(cat '$SECRETS/c2')\" $RLOG"
+grep -e 'Login OK' -e 'Login incorrect' $RLOG > "$W/logins.txt" 2>/dev/null
+expect 'with Log logins on (the default) the accept and the reject are one line each, with user, client and calling station' \
+    "[ \"\$(grep -c 'Auth: Login OK: \\[testuser\\] (from client kazuhahub-ap-1 port [0-9]* cli 02-00-00-00-00-01)\$' $RLOG)\" = 1 ] && [ \"\$(grep -c 'Auth: Login incorrect: \\[testuser\\] (from client kazuhahub-ap-1 port [0-9]* cli 02-00-00-00-00-01)\$' $RLOG)\" = 1 ] && ! grep -q 'Login.*\\[anonymous\\]' $RLOG"
+expect 'no password is anywhere in the daemon log directory' \
+    "! grep -r -q -F -e '$USERPASS' -e 'wrong-password-for-the-test' /var/log/kazuhahub-wifi-radius-proxy"
+/usr/local/opnsense/scripts/syslog/queryLog.py --module core --filename kazuhahub-wifi-radius-proxy --limit 50 > "$W/logpage.json" 2>&1
+expect 'the standard log page reads the logins with time, severity and process' \
+    "grep -q 'Login OK' '$W/logpage.json' && grep -q '\"severity\":\"Notice\"' '$W/logpage.json' && grep -q '\"process_name\":\"radiusd\"' '$W/logpage.json' && ! grep -q '\"timestamp\":null' '$W/logpage.json'"
+expect 'Log logins is switched off through the model' \
+    "php '$W/seed.php' loglogins off | grep -q '\"log_logins\":\"0\"' && [ \"\$(configctl kazuhahubwifiradiusproxy restart)\" = OK ] && sleep 2 && ! grep -q kazuhahub_login $CONF/sites-enabled/inner-tunnel"
+LOGINS_BEFORE="$(grep -c -e 'Login OK' -e 'Login incorrect' $RLOG)"
+run_eapol "$W/accept.conf"; run_eapol "$W/reject.conf"
+expect 'with Log logins off an accept and a reject add no login line' \
+    "[ \"\$(grep -c -e 'Login OK' -e 'Login incorrect' $RLOG)\" = '$LOGINS_BEFORE' ] && run_eapol '$W/accept.conf' && grep -q '^SUCCESS' '$W/eapol.out'"
+expect 'Log logins is switched back on' \
+    "php '$W/seed.php' loglogins on | grep -q '\"log_logins\":\"1\"' && [ \"\$(configctl kazuhahubwifiradiusproxy restart)\" = OK ] && sleep 2 && grep -q kazuhahub_login_ok $CONF/sites-enabled/inner-tunnel"
 
 expect 'a reload keeps the service serving' \
     "[ \"\$(configctl kazuhahubwifiradiusproxy reload)\" = OK ] && sleep 1 && run_eapol '$W/accept.conf' && grep -q '^SUCCESS' '$W/eapol.out'"
@@ -508,9 +523,34 @@ while [ "$attempt" -lt 4 ] && [ "$FAILOVER" = 0 ]; do
     if run_eapol "$W/accept.conf" 25 && grep -q '^SUCCESS' "$W/eapol.out"; then FAILOVER=1; fi
 done
 if [ "$FAILOVER" = 1 ]; then pass 'fail-over: with the first central server stopped, the second one accepts' "attempt $attempt"; else fail 'fail-over: with the first central server stopped, the second one accepts'; fi
-configctl kazuhahubwifiradiusproxy homeservers > "$W/homeservers-failover.json"
-expect 'fail-over: the stopped central server is reported zombie or dead, the second alive' \
-    "grep -q -E '\"address\":\"127.0.0.2\",\"port\":1814,\"state\":\"(zombie|dead)\"' '$W/homeservers-failover.json' && grep -q '\"address\":\"127.0.0.3\",\"port\":1814,\"state\":\"alive\"' '$W/homeservers-failover.json'"
+# radiusd marks a central server zombie only once its response window has passed, so
+# the state is read until it settles; the last answer stays in homeservers-failover.json.
+# Called through expect's eval.
+# shellcheck disable=SC2329
+failover_states() {
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        configctl kazuhahubwifiradiusproxy homeservers > "$W/homeservers-failover.json"
+        if grep -q -E '"address":"127.0.0.2","port":1814,"state":"(zombie|dead)"' "$W/homeservers-failover.json" \
+            && grep -q '"address":"127.0.0.3","port":1814,"state":"alive"' "$W/homeservers-failover.json"; then
+            return 0
+        fi
+        sleep 3
+    done
+    return 1
+}
+expect 'fail-over: the stopped central server is reported zombie or dead, the second alive' 'failover_states'
+# With no central server left, the login fails and one line says why, with the real user.
+kill "$(cat "$W/central2/run/radiusd.pid")" 2>/dev/null
+# A fail-over attempt above that went to the stopped server is still waiting for it and
+# logs its own failure when it gives up (response window 15 s, then the zombie check);
+# let those finish, then count from here.
+sleep 45
+LINES_BEFORE="$(wc -l < $RLOG | tr -d ' ')"
+run_eapol "$W/accept.conf" 60
+tail -n "+$((LINES_BEFORE + 1))" $RLOG > "$W/noanswer.log"
+expect 'with no central server answering the login fails and is logged once, naming the user' \
+    "! grep -q '^SUCCESS' '$W/eapol.out' && [ \"\$(grep -c 'Auth: Login failed: \\[testuser\\] (from client kazuhahub-ap-1 port [0-9]* cli 02-00-00-00-00-01): no central server answered\$' '$W/noanswer.log')\" = 1 ] && ! grep -q -e 'Login OK' -e 'Login incorrect: ' '$W/noanswer.log'"
+grep -e 'Login OK' -e 'Login incorrect' -e 'Login failed' $RLOG > "$W/logins.txt" 2>/dev/null
 
 # --- stop, restart, stop -------------------------------------------------------
 expect 'the service stops through configd' "[ \"\$(configctl kazuhahubwifiradiusproxy stop)\" = OK ]"

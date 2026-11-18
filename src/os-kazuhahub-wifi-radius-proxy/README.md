@@ -6,7 +6,7 @@
 
 | | |
 | --- | --- |
-| 插件版本 | `1.2.0` |
+| 插件版本 | `1.2.1` |
 | 目标 | OPNsense 26.7，`FreeBSD:15:amd64` |
 | 依赖 | 仅 FreeBSD 包 `freeradius3`（`net/freeradius3`，26.7 自带 3.2.10） |
 | 菜单 | **服务 > Kazuha Hub Wi-Fi RADIUS > Settings** |
@@ -27,7 +27,11 @@
 - 中心服务器按顺序组成故障转移池：`response_window = 15`、`zombie_period = 40`，
   并以 Status-Server 探测（`check_interval = 30`、`check_timeout = 4`、
   `num_answers_to_alive = 3`）。应答必须带 Message-Authenticator。
-- 日志写到 `/var/log/kazuhahub-wifi-radius-proxy/radius.log`，不记录任何密码，无论对错。
+- 守护进程日志写到 `/var/log/kazuhahub-wifi-radius-proxy/kazuhahub-wifi-radius-proxy_radius.log`，登录记录写到 `/var/log/kazuhahub-wifi-radius-proxy/kazuhahub-wifi-radius-proxy_logins.log`，都不记录任何密码，无论对错。**Log logins** 打开时（默认）每次登录记一行
+  `Login OK` 或 `Login incorrect`（中心服务器都不响应时为 `Login failed ... no central server answered`），
+  含用户名、接入点（client）和 calling station。中心服务器都不响应时，FreeRADIUS 自己还会写一行
+  `Login incorrect (Home Server failed to respond): [anonymous] ...`（外层身份），这一行来自守护进程本身，无法关闭。
+  **Services > Kazuha Hub Wi-Fi RADIUS > Log File** 在标准日志页面中显示它。
 
 ## 设置
 
@@ -39,6 +43,7 @@
 | Access point networks | LAN 子网 | 接入点所在的 IPv4 网络（例如 `192.0.2.0/24`），每个网络生成一个客户端。 |
 | Access point secret | 空 | 接入点与本服务共用的密钥串。 |
 | Central servers | 无 | 由管理员添加，通常一台主中心、一台备用中心：地址、端口（默认 1812）、密钥串、顺序；序号小的优先。 |
+| Log logins | 开 | 每次登录记一行 `Login OK` 或 `Login incorrect`，含用户、client 和 calling station；绝不记录密码。 |
 | Sync certificates from the central node | 开 | 见下节。 |
 | Certificate sources | 空 | 在私有网络上分发证书集的中心节点，格式 `http://地址:端口`，逗号分隔，按故障转移顺序排列（最多 8 个）；未填写时不拉取。 |
 | Expected certificate name | 空 | 中心服务器证书必须带的 DNS 名；未填写时不拉取。 |
@@ -121,7 +126,9 @@ configd 输出、状态页或测试输出。密钥串长 8 到 128 个字符，�
 | `/usr/local/etc/kazuhahub-wifi-radius-proxy/` | 生成的配置，0750 root:freeradius，文件 0640；卸载时删除 |
 | `/var/run/kazuhahub-wifi-radius-proxy/` | pid、控制套接字、上次检查结果 |
 | `/var/db/kazuhahub-wifi-radius-proxy/certsync/` | 已接受的中心证书集、上一套和最近一次同步结果，0700 root；卸载时删除 |
-| `/var/log/kazuhahub-wifi-radius-proxy/radius.log` | 守护进程日志 |
+| `/var/log/kazuhahub-wifi-radius-proxy/kazuhahub-wifi-radius-proxy_radius.log` | 守护进程日志，在 **Log File** 中查看。1.2.0 及以前叫 `radius.log`（含内置的登录行），升级时改名 |
+| `/var/log/kazuhahub-wifi-radius-proxy/kazuhahub-wifi-radius-proxy_logins.log` | 每次登录一行，在 **Log File** 中查看 |
+| `/usr/local/opnsense/scripts/syslog/logformats/kazuhahubwifiradius.py` | 供标准日志页面解析该日志：时间、级别，登录失败记为 notice |
 | `/usr/local/opnsense/version/kazuhahub-wifi-radius-proxy` | 产品版本（JSON） |
 
 卸载只删除生成的配置、运行时文件和日志，设置仍留在 `config.xml`，重装后恢复。升级保留生成的

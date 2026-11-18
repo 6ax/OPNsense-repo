@@ -81,7 +81,7 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(set(files), {
             '/etc/rc.conf.d/kazuhahub_wifiradiusproxy',
             path('radiusd.conf'), path('clients.conf'), path('proxy.conf'),
-            path('mods-enabled/eap'), path('mods-enabled/always'), path('mods-enabled/attr_filter'),
+            path('mods-enabled/eap'), path('mods-enabled/always'), path('mods-enabled/attr_filter'), path('mods-enabled/linelog'),
             path('policy.d/kazuhahub'), path('mods-config/attr_filter/access_reject'),
             path('sites-enabled/default'), path('sites-enabled/inner-tunnel'), path('sites-enabled/control')})
         # Everything lands in the private directory, except the service setting.
@@ -221,7 +221,8 @@ class TemplateTests(unittest.TestCase):
                          [('&Proxy-To-Realm', ':=', '"ENTRA"')])
         for empty in ['authenticate', 'pre-proxy', 'post-proxy']:
             self.assertEqual(section(site, empty)['items'], [])
-        self.assertEqual(calls(section(section(site, 'post-auth'), 'Post-Auth-Type REJECT')), ['attr_filter.access_reject'])
+        self.assertEqual(calls(section(site, 'post-auth')), ['kazuhahub_login_ok'])
+        self.assertEqual(calls(section(section(site, 'post-auth'), 'Post-Auth-Type REJECT')), ['kazuhahub_login_incorrect', 'attr_filter.access_reject'])
 
     def test_the_control_socket_is_read_only_and_inside_the_private_run_directory(self):
         listen = section(parse(self.files()[path('sites-enabled/control')]), 'listen')
@@ -334,7 +335,7 @@ class TemplateTests(unittest.TestCase):
                         {'client_networks': None, 'interfaces': None, 'client_secret': None, 'centrals': ''}]:
             with self.subTest(general=general):
                 files = self.files(general=general)
-                self.assertEqual(len(files), 12)
+                self.assertEqual(len(files), 13)
         files = self.files(general={'client_networks': None})
         self.assertIn('# no-usable-client', files[path('clients.conf')])
         files = self.files(general={'interfaces': None})
@@ -458,7 +459,8 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(calls(section(remove, 'else')), ['noop'])
         # Every policy and module the sites call exists in the generated files.
         files = self.files()
-        known = set(heads(tree)) | {'eap', 'reject', 'attr_filter.access_reject'}
+        known = set(heads(tree)) | {'eap', 'reject', 'attr_filter.access_reject', 'kazuhahub_login_ok', 'kazuhahub_login_incorrect',
+                                    'kazuhahub_login_rejected', 'kazuhahub_login_no_answer'}
         for name in ['sites-enabled/default', 'sites-enabled/inner-tunnel']:
             def walk(node):
                 for item in node['items']:
@@ -478,8 +480,10 @@ class TemplateTests(unittest.TestCase):
         log = section(tree, 'log')
         options = {item['key']: item['value'] for item in log['items']}
         self.assertEqual(options['destination'], 'files')
-        self.assertEqual(options['file'], '${logdir}/radius.log')
+        self.assertEqual(options['file'], '${logdir}/kazuhahub-wifi-radius-proxy_radius.log')
         self.assertEqual((options['auth_badpass'], options['auth_goodpass']), ('no', 'no'))
+        self.assertEqual(options['auth'], 'no')
+
         security = section(tree, 'security')
         self.assertEqual(values(security, 'user'), ['freeradius'])
         self.assertEqual(values(security, 'group'), ['freeradius'])
@@ -488,6 +492,7 @@ class TemplateTests(unittest.TestCase):
                          ['$INCLUDE clients.conf', '$INCLUDE proxy.conf', '$INCLUDE sites-enabled/'])
         self.assertEqual([calls(item) for item in sections(tree, 'modules')], [['$INCLUDE mods-enabled/']])
         self.assertEqual([calls(item) for item in sections(tree, 'policy')], [['$INCLUDE policy.d/']])
+
         self.assertEqual(values(tree, 'proxy_requests'), ['yes'])
         # The dictionaries and the module libraries are the compiled-in defaults of freeradius3,
         # so an upgrade of the package, which changes the library directory, never breaks this file.
@@ -496,6 +501,31 @@ class TemplateTests(unittest.TestCase):
         self.assertNotIn('dictdir', text)
 
     # --- secrets stay where they belong ------------------------------------------------
+
+
+    def test_logins_are_logged_once_from_the_inner_tunnel_unless_switched_off(self):
+        for general, on in [({}, True), ({'log_logins': '1'}, True), ({'log_logins': ''}, True), ({'log_logins': '0'}, False)]:
+            with self.subTest(general=general):
+                files = self.files(general=general)
+                options = {item['key']: item['value'] for item in section(parse(files[path('radiusd.conf')]), 'log')['items']}
+                # The built-in lines name the outer identity twice per login: always off, passwords never.
+                self.assertEqual((options['auth'], options['auth_badpass'], options['auth_goodpass']), ('no', 'no', 'no'))
+                inner = files[path('sites-enabled/inner-tunnel')]
+                self.assertEqual('kazuhahub_login_ok' in inner, on)
+                self.assertEqual('kazuhahub_login_incorrect' in inner, on)
+                outer = parse(files[path('sites-enabled/default')])
+                post_proxy = section(section(outer, 'server default'), 'post-proxy')
+                if on:
+                    self.assertEqual(heads(post_proxy), ['if (&proxy-reply:Packet-Type == Access-Reject)', 'Post-Proxy-Type Fail-Authentication'])
+                    self.assertEqual(calls(section(post_proxy, 'Post-Proxy-Type Fail-Authentication')), ['kazuhahub_login_no_answer'])
+                    self.assertEqual(calls(section(post_proxy, 'if (&proxy-reply:Packet-Type == Access-Reject)')), ['kazuhahub_login_rejected'])
+                self.assertEqual(calls(post_proxy), ['eap'])
+                linelog = files[path('mods-enabled/linelog')]
+                self.assertEqual(linelog.count('filename = ${logdir}/kazuhahub-wifi-radius-proxy_logins.log'), 4)
+                self.assertNotIn('_radius.log', linelog)
+                self.assertNotIn('Password', linelog)
+                self.assertIn('Login OK: [%{User-Name}] (from client %{client:shortname} port %{%{outer.request:NAS-Port}:-0} '
+                              'cli %{%{outer.request:Calling-Station-Id}:-unknown})', linelog)
 
     def test_the_secrets_appear_only_in_the_two_files_that_need_them(self):
         files = render(configuration())

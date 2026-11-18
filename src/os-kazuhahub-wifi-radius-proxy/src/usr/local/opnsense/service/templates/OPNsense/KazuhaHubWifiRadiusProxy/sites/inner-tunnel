@@ -3,6 +3,9 @@
 #
 # Nothing is authenticated here. The tunneled PAP request is handed to the
 # realm that points at the central servers, which answer it.
+{% set general = OPNsense.kazuhahubwifiradiusproxy.general if helpers.exists('OPNsense.kazuhahubwifiradiusproxy.general') else {} %}
+{# Logins are logged unless the setting is explicitly off; a 1.2.0 configuration has no setting yet. #}
+{% set log_logins = (general.get('log_logins') or '1') | string != '0' %}
 
 server inner-tunnel {
 	listen {
@@ -25,7 +28,13 @@ server inner-tunnel {
 	}
 
 	post-auth {
+{% if log_logins %}
+		kazuhahub_login_ok
+{% endif %}
 		Post-Auth-Type REJECT {
+{% if log_logins %}
+			kazuhahub_login_incorrect
+{% endif %}
 			attr_filter.access_reject
 		}
 	}

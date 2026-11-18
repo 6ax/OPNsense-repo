@@ -2,7 +2,7 @@
 # Upgrade check for the rename, run as root on the test host (an OPNsense VM
 # that is not a production router):
 #
-#   sh upgrade.sh <dist-dir> <work-dir> <eapol_test> radius|wifi-proxy
+#   sh upgrade.sh <dist-dir> <work-dir> <eapol_test> radius|wifi-proxy|wifi-radius-proxy
 #
 # <dist-dir> holds the new os-kazuhahub-wifi-radius-proxy and the transitional
 # os-kazuhahub-radius and os-kazuhahub-wifi-proxy packages. The run installs the
@@ -11,7 +11,9 @@
 # starts it and proves EAP-TTLS through it. With "wifi-proxy" it first moves on
 # to the published 1.1.0 (os-kazuhahub-wifi-proxy with the transitional
 # os-kazuhahub-radius), gives it a sync account and an accepted central
-# certificate set from a second CA, and proves EAP-TTLS on that set. It then
+# certificate set from a second CA, and proves EAP-TTLS on that set. With
+# "wifi-radius-proxy" it moves on to the published 1.2.0 instead, whose daemon
+# always logged logins to radius.log. It then
 # upgrades the way the firmware does: pkg upgrade against a local repository with
 # the three new packages. It checks that every setting, secret and central
 # server uuid moved to the new name, that the former service left nothing
@@ -21,12 +23,15 @@
 # printed; a JSON report is written to <work-dir>/report.json.
 set -u
 export LC_ALL=C
-[ "$#" -eq 4 ] || { echo 'usage: upgrade.sh dist-dir work-dir eapol_test radius|wifi-proxy' >&2; exit 1; }
+[ "$#" -eq 4 ] || { echo 'usage: upgrade.sh dist-dir work-dir eapol_test radius|wifi-proxy|wifi-radius-proxy' >&2; exit 1; }
 DIST="$1"
 W="$2"
 EAPOL="$3"
 FROM="$4"
-case "$FROM" in radius|wifi-proxy) ;; *) echo 'upgrade.sh: start from radius (1.0.0) or wifi-proxy (1.1.0)' >&2; exit 1 ;; esac
+case "$FROM" in radius|wifi-proxy|wifi-radius-proxy) ;; *) echo 'upgrade.sh: start from radius (1.0.0), wifi-proxy (1.1.0) or wifi-radius-proxy (1.2.0)' >&2; exit 1 ;; esac
+# The versions the run upgrades to, as the packages in <dist-dir> carry them.
+for f in "$DIST"/os-kazuhahub-wifi-radius-proxy-*.pkg; do NEW="$(pkg query -F "$f" '%v')"; done
+for f in "$DIST"/os-kazuhahub-radius-*.pkg; do TRANSITIONAL="$(pkg query -F "$f" '%v')"; done
 SITE="${UPGRADE_SITE:-https://kazuhahub.github.io/OPNsense-repo}"
 ABI="$(pkg config ABI)"
 STEPS="$W/steps.tsv"
@@ -83,6 +88,10 @@ expect 'the published os-kazuhahub-radius 1.0.0 matches the signed release recor
 if [ "$FROM" = wifi-proxy ]; then
     expect 'the published 1.1.0 packages match the signed release record' \
         'published os-kazuhahub-wifi-proxy 1.1.0 && published os-kazuhahub-radius 1.1.0'
+fi
+if [ "$FROM" = wifi-radius-proxy ]; then
+    expect 'the published 1.2.0 packages match the signed release record' \
+        'published os-kazuhahub-wifi-radius-proxy 1.2.0 && published os-kazuhahub-radius 1.2.0'
 fi
 
 # --- the former plugin, as a router runs it -------------------------------------
@@ -292,6 +301,21 @@ PHPEOF
     OLD_PID="$(cat /var/run/kazuhahub-wifi-proxy/radiusd.pid 2>/dev/null)"
 fi
 
+if [ "$FROM" = wifi-radius-proxy ]; then
+    # --- on to the published 1.2.0, as the firmware installed it ----------------
+    mkdir -p "$W/repo120/All"
+    cp "$W/published/os-kazuhahub-wifi-radius-proxy-1.2.0.pkg" "$W/published/os-kazuhahub-radius-1.2.0.pkg" "$W/repo120/All/"
+    pkg repo -q "$W/repo120" >/dev/null 2>&1
+    printf 'kazuhahub: { url: "file://%s", signature_type: "none", enabled: yes }\n' "$W/repo120" > "$REPOCONF"
+    pkg update -f > "$W/update-120.out" 2>&1
+    pkg upgrade -y -r kazuhahub > "$W/install-120.out" 2>&1
+    sleep 3
+    expect 'the published 1.2.0 takes over, serves EAP-TTLS and logs the login to radius.log' \
+        "[ \"\$(pkg query '%v' os-kazuhahub-wifi-radius-proxy)\" = 1.2.0 ] && configctl kazuhahubwifiradiusproxy status | grep -q 'is running' && run_eapol && grep -q '^SUCCESS' '$W/eapol.out' && grep -q 'Login OK' /var/log/kazuhahub-wifi-radius-proxy/radius.log"
+    expect 'the 1.2.0 configuration has no Log logins setting' "! grep -q '<log_logins>' /conf/config.xml"
+    LOGINS_120="$(grep -c 'Login OK' /var/log/kazuhahub-wifi-radius-proxy/radius.log)"
+fi
+
 # --- the upgrade, as the firmware runs it ---------------------------------------
 # pkg upgrades a package only from the repository it came from, so the local
 # repository stands in for the Kazuha Hub one under its name, as the published
@@ -305,12 +329,12 @@ pkg update -f > "$W/update.out" 2>&1
 # The firmware upgrades every installed package; here only those of the
 # repository standing in for Kazuha Hub, so the host's own packages stay as they are.
 pkg upgrade -y -r kazuhahub > "$W/upgrade.out" 2>&1
-if [ "$FROM" = radius ]; then
-    expect 'the upgrade replaces 1.0.0 with the transitional package and installs the renamed proxy' \
-        "[ \"\$(pkg query '%v' os-kazuhahub-radius)\" = 1.2.0 ] && [ \"\$(pkg query '%v' os-kazuhahub-wifi-radius-proxy)\" = 1.2.0 ] && ! pkg info -e os-kazuhahub-wifi-proxy"
-else
+if [ "$FROM" = wifi-proxy ]; then
     expect 'the upgrade turns both 1.1.0 names into transitional packages and installs the renamed proxy' \
-        "[ \"\$(pkg query '%v' os-kazuhahub-radius)\" = 1.2.0 ] && [ \"\$(pkg query '%v' os-kazuhahub-wifi-proxy)\" = 1.2.0 ] && [ \"\$(pkg query '%v' os-kazuhahub-wifi-radius-proxy)\" = 1.2.0 ]"
+        "[ \"\$(pkg query '%v' os-kazuhahub-radius)\" = '$TRANSITIONAL' ] && [ \"\$(pkg query '%v' os-kazuhahub-wifi-proxy)\" = '$TRANSITIONAL' ] && [ \"\$(pkg query '%v' os-kazuhahub-wifi-radius-proxy)\" = '$NEW' ]"
+else
+    expect "the upgrade leaves the transitional os-kazuhahub-radius $TRANSITIONAL and the proxy $NEW" \
+        "[ \"\$(pkg query '%v' os-kazuhahub-radius)\" = '$TRANSITIONAL' ] && [ \"\$(pkg query '%v' os-kazuhahub-wifi-radius-proxy)\" = '$NEW' ] && ! pkg info -e os-kazuhahub-wifi-proxy"
 fi
 sleep 3
 # Called through expect's eval; what is left over is listed in leftovers.txt.
@@ -343,7 +367,7 @@ expect 'every secret is in config.xml exactly once' \
     "[ \"\$(grep -c -F '$AP' /conf/config.xml)\" = 1 ] && [ \"\$(grep -c -F \"\$(cat '$SECRETS/c1')\" /conf/config.xml)\" = 1 ] && [ \"\$(grep -c -F \"\$(cat '$SECRETS/c2')\" /conf/config.xml)\" = 1 ]"
 expect 'the renamed service runs, alone' \
     "configctl kazuhahubwifiradiusproxy status | grep -q 'is running' && [ \"\$(pgrep -f 'radiusd -d /usr/local/etc/kazuhahub-wifi-radius-proxy' | wc -l | tr -d ' ')\" = 1 ] && ! pgrep -f 'radiusd -d /usr/local/etc/kazuhahub-radius'"
-if [ "$FROM" = radius ]; then
+if [ "$FROM" != wifi-proxy ]; then
     expect 'the renamed service serves EAP-TTLS with the carried-over settings' "run_eapol && grep -q '^SUCCESS' '$W/eapol.out'"
 else
     expect 'the renamed service serves EAP-TTLS on the carried-over central set' "run_eapol_central && grep -q '^SUCCESS' '$W/eapol.out'"
@@ -356,6 +380,35 @@ expect 'it listens on the LAN address on 1812 and nowhere new' \
     "sockstat -4 -l | awk -v pid=\"\$(cat /var/run/kazuhahub-wifi-radius-proxy/radiusd.pid)\" '\$3 == pid {print \$6}' | sort | tr '\n' ' ' | grep -q -E '^\\*:[0-9]+ 10\\.0\\.0\\.1:1812 127\\.0\\.0\\.1:18120 \$'"
 expect 'the old configd actions are gone and the new ones answer' \
     "! configctl kazuhahubradius status 2>&1 | grep -q 'is running' && ! configctl kazuhahubwifiproxy status 2>&1 | grep -q 'is running' && configctl kazuhahubwifiradiusproxy lastcheck | grep -q '\"result\":\"ok\"'"
+# --- logins: on by default, under the name the standard log page reads -------------
+if [ "$FROM" = wifi-proxy ]; then serve=run_eapol_central; else serve=run_eapol; fi
+RLOG=/var/log/kazuhahub-wifi-radius-proxy/kazuhahub-wifi-radius-proxy_logins.log
+cat > "$W/reject.conf" <<EOF
+network={
+	ssid="upgrade"
+	key_mgmt=WPA-EAP
+	eap=TTLS
+	identity="testuser"
+	anonymous_identity="anonymous"
+	password="wrong-password-for-the-upgrade"
+	ca_cert="$PKI/ca.pem"
+	phase2="auth=PAP"
+}
+EOF
+[ "$FROM" = wifi-proxy ] && sed -i '' "s#ca_cert=\"$PKI/ca.pem\"#ca_cert=\"$PKI/ca2.pem\"#" "$W/reject.conf"
+"$EAPOL" -c "$W/reject.conf" -a 10.0.0.1 -p 1812 -s "$AP" -r0 -t 20 > "$W/eapol-reject.out" 2>&1
+$serve
+expect 'Log logins is on after the upgrade: the inner tunnel logs each login, the built-in lines and passwords stay off' \
+    "grep -q kazuhahub_login_ok /usr/local/etc/kazuhahub-wifi-radius-proxy/sites-enabled/inner-tunnel && grep -q '^[[:space:]]*auth = no' /usr/local/etc/kazuhahub-wifi-radius-proxy/radiusd.conf && grep -q '^[[:space:]]*auth_badpass = no' /usr/local/etc/kazuhahub-wifi-radius-proxy/radiusd.conf && grep -q '^[[:space:]]*auth_goodpass = no' /usr/local/etc/kazuhahub-wifi-radius-proxy/radiusd.conf"
+expect 'an accept and a reject after the upgrade are logged, one line each' \
+    "grep -q 'Auth: Login OK: \\[testuser\\] (from client kazuhahub-ap-1 port [0-9]* cli 02-00-00-00-00-01)\$' $RLOG && grep -q 'Auth: Login incorrect: \\[testuser\\] (from client kazuhahub-ap-1 port [0-9]* cli 02-00-00-00-00-01)\$' $RLOG"
+expect 'no password is anywhere in the daemon log directory' \
+    "! grep -r -q -F -e '$USERPASS' -e 'wrong-password-for-the-upgrade' /var/log/kazuhahub-wifi-radius-proxy"
+if [ "$FROM" = wifi-radius-proxy ]; then
+    expect 'the 1.2.0 radius.log was kept under the new name, its logins included' \
+        "[ ! -e /var/log/kazuhahub-wifi-radius-proxy/radius.log ] && [ \"\$(grep -c 'Login OK' /var/log/kazuhahub-wifi-radius-proxy/kazuhahub-wifi-radius-proxy_radius.log)\" = '$LOGINS_120' ]"
+fi
+
 cat > "$W/read.php" <<'PHPEOF'
 <?php
 require_once('/usr/local/opnsense/mvc/app/config/loader.php');
@@ -377,7 +430,6 @@ if [ "$KEPT" = 1 ]; then pass 'the renamed proxy is no longer marked automatic';
 pkg delete -y os-kazuhahub-radius > "$W/delete-transitional.out" 2>&1
 pkg info -e os-kazuhahub-wifi-proxy && pkg delete -y os-kazuhahub-wifi-proxy >> "$W/delete-transitional.out" 2>&1
 pkg autoremove -y > "$W/autoremove.out" 2>&1
-if [ "$FROM" = radius ]; then serve=run_eapol; else serve=run_eapol_central; fi
 expect 'removing the transitional packages and autoremove keep the proxy running' \
     "! pkg info -e os-kazuhahub-radius && ! pkg info -e os-kazuhahub-wifi-proxy && pkg info -e os-kazuhahub-wifi-radius-proxy && configctl kazuhahubwifiradiusproxy status | grep -q 'is running' && $serve && grep -q '^SUCCESS' '$W/eapol.out'"
 

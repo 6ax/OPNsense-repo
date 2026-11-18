@@ -32,6 +32,7 @@ chmod 0644 \
 	/usr/local/opnsense/scripts/kazuhahub-wifi-radius-proxy/homeservers.php \
 	/usr/local/opnsense/scripts/kazuhahub-wifi-radius-proxy/keep_installed.sh \
 	/usr/local/opnsense/scripts/kazuhahub-wifi-radius-proxy/takeover.php \
+	/usr/local/opnsense/scripts/syslog/logformats/kazuhahubwifiradius.py \
 	/usr/local/opnsense/service/conf/actions.d/actions_kazuhahubwifiradiusproxy.conf \
 	/usr/local/opnsense/www/js/widgets/KazuhaHubWifiRadiusProxy.js \
 	/usr/local/opnsense/www/js/widgets/Metadata/KazuhaHubWifiRadiusProxy.xml
@@ -52,6 +53,17 @@ if [ -d "$former_sync/current" ] && [ ! -e "$renamed_sync" ]; then
 		cp -Rp "$former_sync" "$renamed_sync" 2>/dev/null || rm -rf "$renamed_sync"
 	fi
 	[ -d "$renamed_sync" ] || echo 'Warning: the certificate set of os-kazuhahub-wifi-proxy could not be carried over; the next sync fetches it again.' >&2
+fi
+
+# Until 1.2.0 the daemon log was radius.log; keep it under the name the
+# standard log page reads, before the service is restarted on the new name.
+log_dir=/var/log/kazuhahub-wifi-radius-proxy
+if [ -f "$log_dir/radius.log" ]; then
+	if [ -e "$log_dir/kazuhahub-wifi-radius-proxy_radius.log" ]; then
+		cat "$log_dir/radius.log" >> "$log_dir/kazuhahub-wifi-radius-proxy_radius.log" && rm -f "$log_dir/radius.log"
+	else
+		mv "$log_dir/radius.log" "$log_dir/kazuhahub-wifi-radius-proxy_radius.log"
+	fi || true
 fi
 
 echo "===> Clearing OPNsense menu and ACL cache"

@@ -40,6 +40,10 @@
             <Mask>/^[A-Za-z0-9!#&amp;()*+,.\/:;&lt;=&gt;?@^_{}|~\[\]-]{8,128}$/D</Mask>
             <ValidationMessage>Use 8 to 128 characters: letters, digits and ! # &amp; ( ) * + , - . / : ; &lt; = &gt; ? @ [ ] ^ _ { | } ~</ValidationMessage>
         </client_secret>
+        <log_logins type="BooleanField">
+            <Default>1</Default>
+            <Required>Y</Required>
+        </log_logins>
         <cert_sync type="BooleanField">
             <Default>1</Default>
             <Required>Y</Required>
