@@ -4,6 +4,10 @@
         <patterns>
             <pattern>ui/kazuhahubwifiradiusproxy/*</pattern>
             <pattern>api/kazuhahubwifiradiusproxy/*</pattern>
+            <pattern>ui/diagnostics/log/core/kazuhahub-wifi-radius-proxy</pattern>
+            <pattern>api/diagnostics/log/core/kazuhahub-wifi-radius-proxy</pattern>
+            <pattern>api/diagnostics/log/core/kazuhahub-wifi-radius-proxy/export</pattern>
+            <pattern>api/diagnostics/log/core/kazuhahub-wifi-radius-proxy/live</pattern>
         </patterns>
     </page-services-kazuhahubwifiradiusproxy>
 </acl>

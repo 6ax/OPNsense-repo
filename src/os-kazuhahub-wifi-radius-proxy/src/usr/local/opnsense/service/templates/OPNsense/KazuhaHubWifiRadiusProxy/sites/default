@@ -2,6 +2,7 @@
 # Rendered from the OPNsense configuration; manual edits are overwritten.
 {% set address_pattern = '^(?!0\\.|127\\.|22[4-9]\\.|2[3-5][0-9]\\.)((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\Z' %}
 {% set general = OPNsense.kazuhahubwifiradiusproxy.general if helpers.exists('OPNsense.kazuhahubwifiradiusproxy.general') else {} %}
+{% set log_logins = (general.get('log_logins') or '1') | string != '0' %}
 {% set ns = namespace(addresses=[], uplinks=[]) %}
 {#   Every interface a gateway of System > Gateways points at is an uplink: 26.7 keeps them in the Gateways
      model, older configurations under gateways. #}
@@ -59,6 +60,17 @@ server default {
 	}
 
 	post-proxy {
+{% if log_logins %}
+		# The tunneled request is proxied through this outer request, so a central
+		# server's reject of it arrives here, never in the inner tunnel's post-auth.
+		if (&proxy-reply:Packet-Type == Access-Reject) {
+			kazuhahub_login_rejected
+		}
+		# No central server answered in time: the client is rejected, and the line says why.
+		Post-Proxy-Type Fail-Authentication {
+			kazuhahub_login_no_answer
+		}
+{% endif %}
 		eap
 	}
 

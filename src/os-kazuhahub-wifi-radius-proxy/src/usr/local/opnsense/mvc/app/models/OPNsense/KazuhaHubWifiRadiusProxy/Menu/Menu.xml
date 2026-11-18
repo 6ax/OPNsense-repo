@@ -4,6 +4,7 @@
             <Settings order="10" VisibleName="Settings" url="/ui/kazuhahubwifiradiusproxy">
                 <item url="/ui/kazuhahubwifiradiusproxy/*" visibility="hidden"/>
             </Settings>
+            <LogFile order="20" VisibleName="Log File" url="/ui/diagnostics/log/core/kazuhahub-wifi-radius-proxy"/>
         </KazuhaHubWifiRadiusProxy>
     </Services>
 </menu>

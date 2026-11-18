@@ -1,0 +1,35 @@
+# Kazuha Hub Wi-Fi RADIUS: one log line per login.
+# Rendered from the OPNsense configuration; manual edits are overwritten.
+#
+# The line names the user who signed in, never the outer anonymous identity.
+# The inner tunnel logs every accept and its own rejects, taking the access
+# point (client), its port and the calling station from the outer request; a
+# central server's reject arrives in the outer server's post-proxy, which logs
+# the user of the proxied inner request, and so does a request no central
+# server answered ("Login failed ... no central server answered"). They write a
+# file of their own, next to the daemon log, so the two writers never share a
+# file; the plugin's Log File page reads both. No password is ever part of a line.
+
+{% raw %}
+linelog kazuhahub_login_ok {
+	filename = ${logdir}/kazuhahub-wifi-radius-proxy_logins.log
+	permissions = 0640
+	format = "%t : Auth: Login OK: [%{User-Name}] (from client %{client:shortname} port %{%{outer.request:NAS-Port}:-0} cli %{%{outer.request:Calling-Station-Id}:-unknown})"
+}
+
+linelog kazuhahub_login_incorrect {
+	filename = ${logdir}/kazuhahub-wifi-radius-proxy_logins.log
+	permissions = 0640
+	format = "%t : Auth: Login incorrect: [%{User-Name}] (from client %{client:shortname} port %{%{outer.request:NAS-Port}:-0} cli %{%{outer.request:Calling-Station-Id}:-unknown})"
+}
+linelog kazuhahub_login_rejected {
+	filename = ${logdir}/kazuhahub-wifi-radius-proxy_logins.log
+	permissions = 0640
+	format = "%t : Auth: Login incorrect: [%{proxy-request:User-Name}] (from client %{client:shortname} port %{%{NAS-Port}:-0} cli %{%{Calling-Station-Id}:-unknown})"
+}
+linelog kazuhahub_login_no_answer {
+	filename = ${logdir}/kazuhahub-wifi-radius-proxy_logins.log
+	permissions = 0640
+	format = "%t : Auth: Login failed: [%{proxy-request:User-Name}] (from client %{client:shortname} port %{%{NAS-Port}:-0} cli %{%{Calling-Station-Id}:-unknown}): no central server answered"
+}
+{% endraw %}

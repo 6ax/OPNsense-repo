@@ -2,7 +2,7 @@
 set -eu
 
 PKG_NAME="${PKG_NAME:-os-kazuhahub-wifi-radius-proxy}"
-VERSION="${VERSION:-1.2.0}"
+VERSION="${VERSION:-1.2.1}"
 ORIGIN="${ORIGIN:-opnsense/os-kazuhahub-wifi-radius-proxy}"
 COMMENT="${COMMENT:-Kazuha Hub Wi-Fi RADIUS: EAP-TTLS Wi-Fi authentication forwarded to central servers}"
 MAINTAINER="${MAINTAINER:-https://github.com/KazuhaHub/}"
@@ -52,6 +52,7 @@ need_file "src/usr/local/opnsense/scripts/kazuhahub-wifi-radius-proxy/export_cer
 need_file "src/usr/local/opnsense/scripts/kazuhahub-wifi-radius-proxy/homeservers.php"
 need_file "src/usr/local/opnsense/scripts/kazuhahub-wifi-radius-proxy/keep_installed.sh"
 need_file "src/usr/local/opnsense/scripts/kazuhahub-wifi-radius-proxy/takeover.php"
+need_file "src/usr/local/opnsense/scripts/syslog/logformats/kazuhahubwifiradius.py"
 need_file "src/usr/local/opnsense/service/conf/actions.d/actions_kazuhahubwifiradiusproxy.conf"
 need_file "src/usr/local/opnsense/service/templates/OPNsense/KazuhaHubWifiRadiusProxy/+TARGETS"
 need_file "src/usr/local/opnsense/service/templates/OPNsense/KazuhaHubWifiRadiusProxy/radiusd.conf"
@@ -63,6 +64,7 @@ need_file "src/usr/local/opnsense/service/templates/OPNsense/KazuhaHubWifiRadius
 need_file "src/usr/local/opnsense/service/templates/OPNsense/KazuhaHubWifiRadiusProxy/mods/eap"
 need_file "src/usr/local/opnsense/service/templates/OPNsense/KazuhaHubWifiRadiusProxy/mods/always"
 need_file "src/usr/local/opnsense/service/templates/OPNsense/KazuhaHubWifiRadiusProxy/mods/attr_filter"
+need_file "src/usr/local/opnsense/service/templates/OPNsense/KazuhaHubWifiRadiusProxy/mods/linelog"
 need_file "src/usr/local/opnsense/service/templates/OPNsense/KazuhaHubWifiRadiusProxy/sites/default"
 need_file "src/usr/local/opnsense/service/templates/OPNsense/KazuhaHubWifiRadiusProxy/sites/inner-tunnel"
 need_file "src/usr/local/opnsense/service/templates/OPNsense/KazuhaHubWifiRadiusProxy/sites/control"

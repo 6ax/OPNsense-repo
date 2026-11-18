@@ -185,7 +185,7 @@
     "os-kazuhahub-wifi-radius-proxy": {
       "staging": "tree",
       "abi": "independent",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "stage": {"src": "/"},
       "deps": {"freeradius3": "net/freeradius3"},
       "version_file": {"path": "/usr/local/opnsense/version/kazuhahub-wifi-radius-proxy", "format": "json"},

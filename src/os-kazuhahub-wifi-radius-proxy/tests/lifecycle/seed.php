@@ -136,6 +136,19 @@ switch ($mode) {
         seed_answer(['result' => 'saved', 'cert_sync' => (string)$model->cert_sync]);
         break;
 
+    case 'loglogins':
+        /* loglogins on|off: the "Log logins" setting through the model, as the page saves it. */
+        $model = new General();
+        $model->setNodes(['log_logins' => ($argv[2] ?? '') === 'on' ? '1' : '0']);
+        $problems = seed_messages($model->performValidation(true));
+        if ($problems) {
+            seed_answer(['result' => 'invalid', 'fields' => $problems], 1);
+        }
+        $model->serializeToConfig(true);
+        Config::getInstance()->save(null, false);
+        seed_answer(['result' => 'saved', 'log_logins' => (string)$model->log_logins]);
+        break;
+
     case 'refusals':
         $answer = [];
         foreach (['wan', 'lan', 'lan,wan', 'opt99'] as $value) {

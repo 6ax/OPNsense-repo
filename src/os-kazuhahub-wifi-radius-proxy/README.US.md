@@ -8,7 +8,7 @@ order.
 
 | | |
 | --- | --- |
-| Plugin version | `1.2.0` |
+| Plugin version | `1.2.1` |
 | Target | OPNsense 26.7, `FreeBSD:15:amd64` |
 | Dependency | the FreeBSD package `freeradius3` only (`net/freeradius3`, 3.2.10 on 26.7) |
 | Menu | **Services > Kazuha Hub Wi-Fi RADIUS > Settings** |
@@ -34,8 +34,16 @@ install hook accepts FreeBSD 14, 15 and 16 on amd64 only.
   `response_window = 15`, `zombie_period = 40`, probed with Status-Server
   (`check_interval = 30`, `check_timeout = 4`, `num_answers_to_alive = 3`).
   Their answers must carry a Message-Authenticator.
-- The log goes to `/var/log/kazuhahub-wifi-radius-proxy/radius.log` and never holds a
-  password, right or wrong.
+- The daemon log goes to `/var/log/kazuhahub-wifi-radius-proxy/kazuhahub-wifi-radius-proxy_radius.log`, the login lines to
+  `/var/log/kazuhahub-wifi-radius-proxy/kazuhahub-wifi-radius-proxy_logins.log`; neither ever holds a
+  password, right or wrong. With **Log logins** on (the default) every login
+  adds one line, `Login OK` or `Login incorrect` (or `Login failed ... no central
+  server answered` when no central server answers), with the user name, the
+  access point (client) and the calling station.
+  When no central server answers, FreeRADIUS itself also writes
+  `Login incorrect (Home Server failed to respond): [anonymous] ...`, with the
+  outer identity; that line comes from the daemon and cannot be switched off. **Services > Kazuha Hub Wi-Fi RADIUS >
+  Log File** shows it on the standard log page.
 
 ## Settings
 
@@ -47,6 +55,7 @@ install hook accepts FreeBSD 14, 15 and 16 on amd64 only.
 | Access point networks | the LAN subnet | IPv4 networks the access points live in (for example `192.0.2.0/24`); one client per network. |
 | Access point secret | empty | The shared secret between the access points and this service. |
 | Central servers | none | Added by the admin, typically a primary central and a backup central: address, port (1812 by default), secret and order; lower sequence first. |
+| Log logins | on | One line per login, `Login OK` or `Login incorrect`, with the user, the client and the calling station; never a password. |
 | Sync certificates from the central node | on | See below. |
 | Certificate sources | empty | The central nodes that serve the certificate set on a private network, as `http://address:port`, comma-separated, in fail-over order (at most 8); nothing is pulled while it is empty. |
 | Expected certificate name | empty | The DNS name the central server certificate must carry; nothing is pulled while it is empty. |
@@ -156,7 +165,9 @@ content changed. They are exported and checked again before every start.
 | `/usr/local/etc/kazuhahub-wifi-radius-proxy/` | generated configuration, 0750 root:freeradius, files 0640; removed on deinstall |
 | `/var/run/kazuhahub-wifi-radius-proxy/` | pid, control socket, last check result |
 | `/var/db/kazuhahub-wifi-radius-proxy/certsync/` | the accepted central certificate set, the previous one and the last sync result, 0700 root; removed on deinstall |
-| `/var/log/kazuhahub-wifi-radius-proxy/radius.log` | daemon log |
+| `/var/log/kazuhahub-wifi-radius-proxy/kazuhahub-wifi-radius-proxy_radius.log` | daemon log, shown under **Log File**. Until 1.2.0 it was `radius.log` (with the built-in login lines), renamed on upgrade |
+| `/var/log/kazuhahub-wifi-radius-proxy/kazuhahub-wifi-radius-proxy_logins.log` | one line per login, shown under **Log File** |
+| `/usr/local/opnsense/scripts/syslog/logformats/kazuhahubwifiradius.py` | reads the log for the standard log page: time, severity, a rejected login as a notice |
 | `/usr/local/opnsense/version/kazuhahub-wifi-radius-proxy` | product version (JSON) |
 
 Deinstalling removes the generated configuration, the runtime files and the log;
