@@ -583,7 +583,8 @@ class StagingRecordTests(SourceTree):
         that for three releases, so this is pinned rather than assumed.
         """
         for plugin, record in sorted(verify.plugin_records(REPO).items()):
-            if record['staging'] == 'unsupported':
+            # The upstream adapter verifies NetHub product metadata in its own suite.
+            if record['staging'] not in {'tree', 'repository'}:
                 continue
             with self.subTest(plugin=plugin):
                 self.assertEqual('json', record['version_file']['format'])

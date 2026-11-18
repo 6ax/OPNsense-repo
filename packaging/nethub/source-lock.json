@@ -1,0 +1,9 @@
+{
+  "commit": "3e88574f79a45063684b6f5d0113bc607bd47484",
+  "plugin": "agents/opnsense/plugin",
+  "repository": "KazuhaHub/nethub",
+  "root": "nethub-3e88574",
+  "sha256": "41dc7580798f1f36c2e8300500edbcd5c608e99c5cd3073059e47638e913fa82",
+  "tag": "v0.0.19-beta.1",
+  "url": "https://github.com/KazuhaHub/nethub/releases/download/v0.0.19-beta.1/nethub-3e88574-source.tar.gz"
+}
