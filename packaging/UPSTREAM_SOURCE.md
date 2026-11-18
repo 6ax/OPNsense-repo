@@ -99,7 +99,7 @@ the completeness of the reviewer's dependency-license collection, or release
 approval. The command explicitly reports native lifecycle/release acceptance as
 false.
 
-The formal repository registers `os-nethub-agent` 0.0.19 for FreeBSD 15 amd64.
+The formal repository registers `os-nethub-agent` 0.0.21 for FreeBSD 15 amd64.
 Its staging record pins the exact package tested in an isolated OPNsense VM,
 the upstream Beta source archive, and the reviewed independent build record.
 For repository verification, generated files are read from the private package
