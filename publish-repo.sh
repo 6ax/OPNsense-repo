@@ -28,35 +28,43 @@ source_commit="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))
 work="$(mktemp -d "${TMPDIR:-/tmp}/mihomo-pages.XXXXXX")"
 mirror_work="$work.mirror"
 trap 'rm -rf "$work" "$mirror_work"' EXIT HUP INT TERM
-git init -q --initial-branch=gh-pages "$work"
-# Use the existing user identity without adding author or co-author overrides.
-git -C "$work" config user.name "$(git -C "$SCRIPT_DIR" config user.name)"
-git -C "$work" config user.email "$(git -C "$SCRIPT_DIR" config user.email)"
+initialize_snapshot() {
+    snapshot_dir="$1"
+    snapshot_remote="$2"
+    snapshot_branch="$3"
+    branch_ref="refs/heads/$snapshot_branch"
+    git init -q --initial-branch="$snapshot_branch" "$snapshot_dir"
+    git -C "$snapshot_dir" config user.name "$(git -C "$SCRIPT_DIR" config user.name)"
+    git -C "$snapshot_dir" config user.email "$(git -C "$SCRIPT_DIR" config user.email)"
+    remote_head="$(git ls-remote --refs "$snapshot_remote" "$branch_ref")"
+    if [ -n "$remote_head" ]; then
+        git -C "$snapshot_dir" fetch --no-tags --depth=1 "$snapshot_remote" "$branch_ref"
+        # Set the parent without populating the index or copying stale site assets.
+        git -C "$snapshot_dir" update-ref "$branch_ref" FETCH_HEAD
+    fi
+}
+
+initialize_snapshot "$work" "$REMOTE" gh-pages
 (cd "$SITE_DIR" && tar -cf - .) | (cd "$work" && tar -xf -)
 mkdir -p "$work/.github/workflows"
 cp "$SCRIPT_DIR/.github/workflows/pages.yml" "$work/.github/workflows/pages.yml"
 cp "$SCRIPT_DIR/verify-repo.py" "$work/verify-repo.py"
 git -C "$work" add .
-git -C "$work" commit -qm 'Publish signed Mihomo repository'
-previous="$(git ls-remote "$REMOTE" refs/heads/gh-pages | awk '{print $1}')"
-# Replace the generated branch using a lease so binaries do not accumulate there.
-git -C "$work" push "--force-with-lease=refs/heads/gh-pages:$previous" "$REMOTE" HEAD:refs/heads/gh-pages
+git -C "$work" commit -q -s --allow-empty -m 'Publish signed package repository'
+git -C "$work" push "$REMOTE" HEAD:refs/heads/gh-pages
 echo '==> Signed repository published to gh-pages'
 
 if [ -n "$MIRROR" ]; then
     # The same signed tree, served under /OPNsense-repo/ of the legacy user site.
     # Catalogs and packages are address-independent, so nothing is re-signed.
-    git init -q --initial-branch=main "$mirror_work"
-    git -C "$mirror_work" config user.name "$(git -C "$SCRIPT_DIR" config user.name)"
-    git -C "$mirror_work" config user.email "$(git -C "$SCRIPT_DIR" config user.email)"
+    initialize_snapshot "$mirror_work" "$MIRROR" main
     (cd "$SITE_DIR" && tar -cf - .) | (cd "$mirror_work" && tar -xf -)
     mkdir -p "$mirror_work/.github/workflows"
     cp "$SCRIPT_DIR/packaging/legacy-pages/pages.yml" "$mirror_work/.github/workflows/pages.yml"
     cp "$SCRIPT_DIR/packaging/legacy-pages/README.md" "$mirror_work/README.md"
     cp "$SCRIPT_DIR/verify-repo.py" "$mirror_work/verify-repo.py"
     git -C "$mirror_work" add .
-    git -C "$mirror_work" commit -qm 'Serve the signed repository at its legacy address'
-    previous_mirror="$(git ls-remote "$MIRROR" refs/heads/main | awk '{print $1}')"
-    git -C "$mirror_work" push "--force-with-lease=refs/heads/main:$previous_mirror" "$MIRROR" HEAD:refs/heads/main
+    git -C "$mirror_work" commit -q -s --allow-empty -m 'Serve the signed repository at its legacy address'
+    git -C "$mirror_work" push "$MIRROR" HEAD:refs/heads/main
     echo '==> Signed repository mirrored to the legacy address'
 fi
