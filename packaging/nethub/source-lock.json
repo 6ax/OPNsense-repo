@@ -1,9 +1,9 @@
 {
-  "commit": "84f7d36d24e2d2477b7ad2748ca3ca2cc070f851",
+  "commit": "f5151a876ea69bd675b69f63744b8f63206d0365",
   "plugin": "agents/opnsense/plugin",
   "repository": "KazuhaHub/nethub",
-  "root": "nethub-84f7d36",
-  "sha256": "7588200d8e56f56a89c23f06aa4d8111b2a61133ecd3dc1f1004f85c5ade1ba7",
-  "tag": "v0.0.21-beta.2",
-  "url": "https://github.com/KazuhaHub/nethub/releases/download/v0.0.21-beta.2/nethub-84f7d36-source.tar.gz"
+  "root": "nethub-f5151a8",
+  "sha256": "944648e946d12e3f5649e0ba379f203234c180a308703efc3ece5705f6b1e60c",
+  "tag": "v0.0.23-beta.3",
+  "url": "https://github.com/KazuhaHub/nethub/releases/download/v0.0.23-beta.3/nethub-f5151a8-source.tar.gz"
 }

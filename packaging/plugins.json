@@ -4,11 +4,11 @@
     "os-nethub-agent": {
       "staging": "nethub-upstream",
       "abi": "FreeBSD:15:amd64",
-      "version": "0.0.21",
+      "version": "0.0.23",
       "source_lock": "packaging/nethub/source-lock.json",
       "build_record": "packaging/nethub/build-record.json",
-      "build_record_sha256": "83fc9bda37be67a1a75092bc3e0457ae75b1530ac4ec64cd7144a6d571cfddc6",
-      "package_sha256": "89e20a71cffb7d0c2cf9f5d3d64492af15908d12749c544d321b4704cb92d510"
+      "build_record_sha256": "2e4afd39b67fc185bd9501e5f3ed195165dfc30632de90112044b9c48fdaa9bb",
+      "package_sha256": "06f2b3e606ca5e80e0d1dba168e1c08b0d2653fa02c2f4b1f16cf4ca23ca7553"
     },
     "os-kazuhahub-repo": {
       "staging": "repository",
