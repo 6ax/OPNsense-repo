@@ -3,11 +3,14 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
 import stat
 import struct
+import subprocess
 import tempfile
+from urllib.request import urlopen
 
 
 def load_module(name, path):
@@ -53,26 +56,7 @@ def read_pinned_record(path, sha256):
     return record
 
 
-def generated_files(directory, record, stage, lock):
-    for key, expected in [('source_commit', lock['commit']), ('source_archive_sha256', lock['sha256']),
-                          ('compiler', stage['compiler']), ('frp_version', stage['frp_version']),
-                          ('build_input_sha256', stage['build_input_sha256'])]:
-        if record[key] != expected:
-            raise ValueError('Build record differs from pinned source inputs: ' + key)
-    if not isinstance(record['abi'], str) or not re.fullmatch(verify.ABI_PATTERN, record['abi']):
-        raise ValueError('Build record must pin a native FreeBSD amd64 ABI.')
-    declared = record['generated_files']
-    if not isinstance(declared, dict) or not REQUIRED_OUTPUTS <= set(declared) or len(declared) > 20000:
-        raise ValueError('Build record lacks a complete generated-file inventory.')
-    upstream_license = 'frpc-licenses/github.com/fatedier/frp@v' + stage['frp_version'] + '/LICENSE'
-    if upstream_license not in declared:
-        raise ValueError('Build record lacks the upstream frp license.')
-    for name, expected in declared.items():
-        source.upstream.relative_path(name)
-        if name not in REQUIRED_OUTPUTS and not name.startswith('frpc-licenses/'):
-            raise ValueError('Build record contains an unexpected generated output.')
-        if not isinstance(expected, str) or not re.fullmatch('[0-9a-f]{64}', expected):
-            raise ValueError('Build record contains an invalid generated-file digest.')
+def read_cached_outputs(directory, declared):
     root = Path(directory)
     if root.is_symlink() or not root.is_dir():
         raise ValueError('Generated-file cache must be a regular directory.')
@@ -92,11 +76,58 @@ def generated_files(directory, record, stage, lock):
         total += len(raw)
         if len(raw) > MAX_FILE_BYTES or total > MAX_BUILD_BYTES:
             raise ValueError('Generated-file cache exceeds its size bound.')
-        if digest(raw) != declared[name]:
-            raise ValueError('Generated-file cache differs from reviewed bytes: ' + name)
         actual[name] = raw
+    return actual
+
+
+def read_package_outputs(package, declared):
+    """Read candidate outputs only after the independent inventory is pinned."""
+    paths = verify.archive_members(package)
+    sizes = {member.name: member.size for member in verify.python_members(package)}
+    actual = {}
+    total = 0
+    for name in declared:
+        member = paths.get(source.GENERATED + name)
+        if member is None:
+            raise ValueError('Generated output is missing a reviewed file: ' + name)
+        size = sizes[member]
+        total += size
+        if not 0 <= size <= MAX_FILE_BYTES or total > MAX_BUILD_BYTES:
+            raise ValueError('Generated output exceeds its size bound.')
+        raw = subprocess.check_output(['tar', '-xOf', str(package), '-P', '--', member])
+        if len(raw) != size:
+            raise ValueError('Generated output differs between archive readers.')
+        actual[name] = raw
+    return actual
+
+
+def generated_files(directory, record, stage, lock, package=None):
+    for key, expected in [('source_commit', lock['commit']), ('source_archive_sha256', lock['sha256']),
+                          ('compiler', stage['compiler']), ('frp_version', stage['frp_version']),
+                          ('build_input_sha256', stage['build_input_sha256'])]:
+        if record[key] != expected:
+            raise ValueError('Build record differs from pinned source inputs: ' + key)
+    if not isinstance(record['abi'], str) or not re.fullmatch(verify.ABI_PATTERN, record['abi']):
+        raise ValueError('Build record must pin a native FreeBSD amd64 ABI.')
+    declared = record['generated_files']
+    if not isinstance(declared, dict) or not REQUIRED_OUTPUTS <= set(declared) or len(declared) > 20000:
+        raise ValueError('Build record lacks a complete generated-file inventory.')
+    upstream_license = 'frpc-licenses/github.com/fatedier/frp@v' + stage['frp_version'] + '/LICENSE'
+    if upstream_license not in declared:
+        raise ValueError('Build record lacks the upstream frp license.')
+    for name, expected in declared.items():
+        source.upstream.relative_path(name)
+        if name not in REQUIRED_OUTPUTS and not name.startswith('frpc-licenses/'):
+            raise ValueError('Build record contains an unexpected generated output.')
+        if not isinstance(expected, str) or not re.fullmatch('[0-9a-f]{64}', expected):
+            raise ValueError('Build record contains an invalid generated-file digest.')
+    actual = (read_package_outputs(package, declared) if directory is None
+              else read_cached_outputs(directory, declared))
+    for name, raw in actual.items():
+        if digest(raw) != declared[name]:
+            raise ValueError('Generated output differs from reviewed bytes: ' + name)
     if set(actual) != set(declared):
-        raise ValueError('Generated-file cache is missing a reviewed output.')
+        raise ValueError('Generated output is missing a reviewed file.')
     binary = actual['frpc']
     if (len(binary) < 20 or binary[:8] != b'\x7fELF\x02\x01\x01\x09'
             or struct.unpack('<HH', binary[16:20]) not in [(2, 62), (3, 62)]):
@@ -138,7 +169,7 @@ def verify_snapshot(package, archive, lock, build_record, build_record_sha256, g
     """Use one private package snapshot for all readers and the returned digest."""
     record = read_pinned_record(build_record, build_record_sha256)
     stage = source.reconstruct(archive, lock)
-    outputs = generated_files(generated_directory, record, stage, lock)
+    outputs = generated_files(generated_directory, record, stage, lock, package)
     expected = dict(stage['files'])
     if set(expected) & set(outputs):
         raise ValueError('Generated outputs replace copied source files.')
@@ -219,6 +250,28 @@ def verify_candidate(package, archive, lock, build_record, build_record_sha256, 
                     raise ValueError('Candidate package exceeds its size bound.')
                 output.write(block)
         return verify_snapshot(snapshot, archive, lock, build_record, build_record_sha256, generated_directory)
+
+
+def verify_registered_candidate(package, source_lock, build_record, record):
+    """Verify the VM-tested package against committed pins and the upstream archive."""
+    lock = source.upstream.load_lock(source_lock)
+    local_archive = os.environ.get('NETHUB_SOURCE_ARCHIVE')
+    with tempfile.TemporaryDirectory(prefix='nethub-release-source-') as temporary:
+        archive = Path(local_archive) if local_archive else Path(temporary) / 'source.tar.gz'
+        if not local_archive:
+            limit = source.upstream.MAX_ARCHIVE_BYTES
+            with urlopen(lock['url'], timeout=30) as response, archive.open('xb') as output:
+                total = 0
+                while block := response.read(65536):
+                    total += len(block)
+                    if total > limit:
+                        raise ValueError('Downloaded source archive exceeds its size bound.')
+                    output.write(block)
+        result = verify_candidate(package, archive, lock, build_record,
+                                  record['build_record_sha256'], generated_directory=None)
+        if result['package_sha256'] != record['package_sha256']:
+            raise ValueError('NetHub package differs from the VM-tested package digest.')
+        return result
 
 
 def main():

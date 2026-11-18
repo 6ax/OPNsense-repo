@@ -3,7 +3,7 @@
 `upstream_source.py` is the archive validation primitive for plugins maintained
 in another repository. It does not register a plugin, stage installed files,
 execute downloaded code, download assets, or authorize signing or publication.
-Existing `plugins.json` records and publication admission are unchanged.
+Existing local-source staging records continue to use their original verification paths.
 
 A reviewed JSON lock contains exactly seven string fields:
 
@@ -97,10 +97,16 @@ Success proves candidate-byte agreement with the supplied reviewed inputs. It
 does not independently prove the reviewer's build provenance, native behavior,
 the completeness of the reviewer's dependency-license collection, or release
 approval. The command explicitly reports native lifecycle/release acceptance as
-false. No NetHub release record or placeholder release pins are installed here.
-Connecting this support to the publication registry, independently reviewing real
-release inputs, native lifecycle validation and owner approval remain required
-before signing or publication.
+false.
+
+The formal repository registers `os-nethub-agent` 0.0.19 for FreeBSD 15 amd64.
+Its staging record pins the exact package tested in an isolated OPNsense VM,
+the upstream Beta source archive, and the reviewed independent build record.
+For repository verification, generated files are read from the private package
+snapshot and compared to the independent record's committed digests. The
+record and its digests must come from a separate build. The verifier downloads
+the pinned source archive or reads it from `NETHUB_SOURCE_ARCHIVE` if an
+operator has cached it locally. Both paths check the same archive digest.
 
 Validation: `python3 -B -m unittest discover -s tests -p test_upstream_source.py -v`.
 The adapter and candidate tests use `test_nethub_source.py` and

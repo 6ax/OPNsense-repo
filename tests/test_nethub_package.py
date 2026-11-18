@@ -144,6 +144,17 @@ class NetHubPackageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'per-file manifest attributes'):
             self.verify()
 
+    def test_registry_can_check_generated_bytes_against_independent_record(self):
+        def verify_candidate_outputs():
+            return candidate.verify_candidate(self.package, self.archive, self.lock,
+                self.record_path, self.record_sha, generated_directory=None)
+
+        self.assertTrue(verify_candidate_outputs()['matches_reviewed_inputs_and_bytes'])
+        self.payload[BIN + 'frpc'] += b'altered'
+        self.write_package()
+        with self.assertRaisesRegex(ValueError, 'differs from reviewed bytes'):
+            verify_candidate_outputs()
+
     def test_cli_reports_scoped_candidate_verification(self):
         lock = self.root / 'source-lock.json'
         lock.write_text(json.dumps(self.lock), encoding='utf-8')
