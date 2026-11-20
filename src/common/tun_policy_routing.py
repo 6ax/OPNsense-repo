@@ -880,6 +880,23 @@ class TunPolicyRouting:
             self.save(record)
         return followed
 
+    def renamed_after_add(self, wanted, inserted):
+        """Whether the interface of a route just added was renamed before readback.
+
+        Mirroring a tunnel's routes takes a few seconds, and the OpenConnect
+        service renames tun30000 to ocvpn0 five seconds after start, so the
+        rename can land between an add and its readback. Treating that as a
+        failed add would leave the route in the table without a journal entry,
+        foreign until the tunnel interface is destroyed.
+        """
+        if inserted['interface'] == wanted['interface']:
+            return False
+        expected = renamed_route(wanted, wanted['interface'], inserted['interface'])
+        if route_semantic(expected) != route_semantic(inserted):
+            return False
+        present = self.interface_names()
+        return wanted['interface'] not in present and inserted['interface'] in present
+
     def recover_pending_route(self, record, desired, snapshot, strict):
         """Settle one write-ahead add without claiming a different live route."""
         pending = record.get('pending_route')
@@ -1008,7 +1025,10 @@ class TunPolicyRouting:
                     self.save(record)
                     raise
                 inserted = self.routes(fib).get(key)
-                if inserted is None or route_semantic(inserted) != route_semantic(wanted):
+                verified = inserted is not None and (
+                    route_semantic(inserted) == route_semantic(wanted)
+                    or self.renamed_after_add(wanted, inserted))
+                if not verified:
                     record.pop('pending_route', None)
                     record.pop('route_recovery_ambiguous', None)
                     self.save(record)
