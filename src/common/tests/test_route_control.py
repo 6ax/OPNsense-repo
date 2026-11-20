@@ -234,6 +234,30 @@ class SharedPolicyTests(unittest.TestCase):
                 self.assertEqual(expected, record['routes'])
                 self.assertEqual(expected != journal, bool(harness.saved))
 
+    def test_rename_between_add_and_readback_is_journaled(self):
+        # Mirroring takes seconds; the tunnel can be renamed mid-way.
+        system = self.tunnel_routes('tun30000', '')
+        renamed = self.tunnel_routes('ocvpn0', 'S')
+
+        class Harness(self.RenameHarness):
+            def route_command(inner, action, _fib, value):
+                self.assertEqual('add', action)
+                key = route.route_key(value)
+                inner.live[key] = renamed[key]
+
+        for present, verified in (({'ocvpn0'}, True), ({'ocvpn0', 'tun30000'}, False)):
+            with self.subTest(present=present):
+                record = {'fib': 1, 'routes': {}}
+                harness = Harness({}, present)
+                if verified:
+                    harness.sync(record, dict(system), native=system)
+                    self.assertEqual(renamed, record['routes'])
+                else:
+                    with self.assertRaisesRegex(policy.RoutingError, 'could not be verified'):
+                        harness.sync(record, dict(system), native=system)
+                    self.assertEqual({}, record['routes'])
+                self.assertNotIn('pending_route', record)
+
     def test_rename_is_not_looked_up_without_a_changed_interface(self):
         live = self.tunnel_routes('ocvpn0', 'S')
         system = self.tunnel_routes('ocvpn0', '')
