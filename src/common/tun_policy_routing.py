@@ -70,6 +70,15 @@ def parse_routes(text, family):
         raise RoutingError(str(error)) from None
 
 
+def renamed_route(route, old, new):
+    """Return a route as netstat shows it after its interface is renamed."""
+    result = dict(route, interface=new)
+    address, separator, zone = route['gateway'].partition('%')
+    if separator and zone == old:
+        result['gateway'] = address + '%' + new
+    return result
+
+
 def normalize_context(context, tun):
     if (not isinstance(context, dict)
             or not isinstance(context.get('interfaces'), list)
@@ -823,6 +832,54 @@ class TunPolicyRouting:
                 foreign[key] = route
         return foreign
 
+    def interface_names(self):
+        """Return the names of the interfaces that exist right now."""
+        value = self.command(['/sbin/ifconfig', '-l'])
+        return set(value.stdout.decode(errors='strict').split())
+
+    def follow_interface_renames(self, record, snapshot, native):
+        """Re-journal owned routes whose interface was renamed underneath them.
+
+        FreeBSD keeps a route bound to its interface across `ifconfig name`,
+        so a rename changes only the interface netstat shows for a route this
+        table owns. The OPNsense OpenConnect service renames its live tunnel
+        (tun30000 to ocvpn0 after start, back before stop) while its routes are
+        installed. Without this, every mirrored tunnel route then differs from
+        its journal entry, is reported as owned elsewhere, and capture can
+        never be restored without clearing the table by hand.
+
+        Only the interface name may differ: the journaled name must no longer
+        exist, the new one must, and the main table must route the destination
+        the same way through the new name. A route an operator replaced, or
+        one whose old interface is still present, stays foreign.
+        """
+        candidates = {}
+        for key, previous in record['routes'].items():
+            existing = snapshot.get(key)
+            if existing is None or existing['interface'] == previous['interface']:
+                continue
+            expected = renamed_route(previous, previous['interface'], existing['interface'])
+            source = native.get(key)
+            if (route_identity(expected) != route_identity(existing)
+                    or expected['discard'] != existing['discard']
+                    or source is None
+                    or route_semantic(source) != route_semantic(existing)):
+                continue
+            candidates[key] = existing
+        if not candidates:
+            return False
+        present = self.interface_names()
+        followed = False
+        for key, existing in candidates.items():
+            if (record['routes'][key]['interface'] in present
+                    or existing['interface'] not in present):
+                continue
+            record['routes'][key] = dict(existing)
+            followed = True
+        if followed:
+            self.save(record)
+        return followed
+
     def recover_pending_route(self, record, desired, snapshot, strict):
         """Settle one write-ahead add without claiming a different live route."""
         pending = record.get('pending_route')
@@ -859,6 +916,8 @@ class TunPolicyRouting:
         snapshot = self.routes(fib)
         snapshot = self.recover_pending_route(
             record, desired, snapshot, strict)
+        if native:
+            self.follow_interface_renames(record, snapshot, native)
         keys = set(record['routes']) | set(desired)
         if len(keys) > ROUTE_LIMIT:
             raise RoutingError('The routing update exceeds the supported route count.')
